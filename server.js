@@ -230,7 +230,7 @@ app.get('/api/notifications', auth.requireAuth, (req, res) => res.json({ notific
 app.delete('/api/notifications', auth.requireAuth, auth.requireRole(...EDIT_ROLES), (req, res) => { repo.clearNotifications(); res.json({ ok: true }); });
 
 // ---------------- reports ----------------
-function reportRows(scope, dept, ref, lead, campus) {
+function reportRows(scope, dept, ref, lead, campus, stage) {
   const base = repo.listCurricula();
   const rows = campus ? base.map(c => S.projectCampus(c, campus, ref, lead)).filter(r => r.offered)
                       : base.map(c => S.enrich(c, ref, lead));
@@ -240,16 +240,17 @@ function reportRows(scope, dept, ref, lead, campus) {
   if (scope === 'gaps') return rows.filter(r => r.docs === 'Incomplete');
   if (scope === 'recognition') return campus ? rows.filter(r => r.recognitionGap) : rows.filter(r => r.recognitionGapCount > 0);
   if (scope === 'dept') return rows.filter(r => r.department === dept);
+  if (scope === 'stage') return rows.filter(r => (r.stage || 'Pre-validation') === stage);
   return rows;
 }
 app.get('/api/report', auth.requireAuth, (req, res) => {
-  const ref = refOf(req), lead = leadOf(req), scope = req.query.scope || 'all', dept = req.query.dept || '', campus = campusOf(req);
+  const ref = refOf(req), lead = leadOf(req), scope = req.query.scope || 'all', dept = req.query.dept || '', campus = campusOf(req), stage = req.query.stage || '';
   const summary = campus ? S.summariseCampus(repo.listCurricula(), campus, ref, lead) : S.summarise(repo.listCurricula(), ref, lead);
-  res.json({ ref, lead, scope, dept, campus: campus || 'All campuses', summary, rows: reportRows(scope, dept, ref, lead, campus) });
+  res.json({ ref, lead, scope, dept, stage, campus: campus || 'All campuses', summary, rows: reportRows(scope, dept, ref, lead, campus, stage) });
 });
 app.get('/api/report.csv', auth.requireAuth, (req, res) => {
-  const ref = refOf(req), lead = leadOf(req), scope = req.query.scope || 'all', dept = req.query.dept || '', campus = campusOf(req);
-  const rows = reportRows(scope, dept, ref, lead, campus);
+  const ref = refOf(req), lead = leadOf(req), scope = req.query.scope || 'all', dept = req.query.dept || '', campus = campusOf(req), stage = req.query.stage || '';
+  const rows = reportRows(scope, dept, ref, lead, campus, stage);
   const head = ['Programme', 'Department', 'NTA Level', 'Campus', 'Offered', 'Approval Letter', 'Departmental Recognition', 'Stamped Copy', 'Valid Until', 'Months Left', 'Status', 'Development Stage', 'Documents', 'Implementation', 'Notes', 'Updated By', 'Updated At'];
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const lines = [head.join(',')].concat(rows.map(r => [

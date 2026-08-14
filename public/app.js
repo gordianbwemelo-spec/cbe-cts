@@ -599,21 +599,24 @@ async function viewReports(m){
       <div class="fld"><label>Report scope</label><select id="rp_scope" onchange="scopeChange()">
         <option value="all">All curricula (full status report)</option><option value="action">Curricula requiring action</option>
         <option value="expired">Expired only</option><option value="due">Due for review only</option>
-        <option value="gaps">Documentation gaps</option><option value="recognition">Recognition gaps (offered, not recognised)</option><option value="dept">By department</option></select></div>
+        <option value="gaps">Documentation gaps</option><option value="recognition">Recognition gaps (offered, not recognised)</option><option value="dept">By department</option><option value="stage">By development / validation stage</option></select></div>
       <div class="fld" id="rp_deptwrap" style="display:none"><label>Department</label><select id="rp_dept">${depts.map(d=>`<option>${esc(d)}</option>`).join('')}</select></div>
+      <div class="fld" id="rp_stagewrap" style="display:none"><label>Development stage</label><select id="rp_stage">${(state.meta.stages||[]).map(s=>`<option>${esc(s)}</option>`).join('')}</select></div>
       <div class="fld"><label>&nbsp;</label><button class="btn primary small" onclick="buildReport()">Generate report</button></div>
       <div class="fld"><label>&nbsp;</label><button class="btn ghost small" onclick="window.print()">🖨 Print / PDF</button></div>
       <div class="fld"><label>&nbsp;</label><button class="btn ghost small" onclick="dlCSV()">⬇ Export CSV</button></div>
     </div></div>
     <div id="reportOut"></div>`;
 }
-window.scopeChange=()=>{ document.getElementById('rp_deptwrap').style.display=document.getElementById('rp_scope').value==='dept'?'block':'none'; };
-function scopeParams(){ const scope=document.getElementById('rp_scope').value; const dept=document.getElementById('rp_dept')?document.getElementById('rp_dept').value:''; return {scope,dept}; }
-window.dlCSV=()=>{ const {scope,dept}=scopeParams(); window.open('/api/report.csv'+qref()+'&scope='+encodeURIComponent(scope)+'&dept='+encodeURIComponent(dept),'_blank'); };
+window.scopeChange=()=>{ const v=document.getElementById('rp_scope').value;
+  document.getElementById('rp_deptwrap').style.display=v==='dept'?'block':'none';
+  document.getElementById('rp_stagewrap').style.display=v==='stage'?'block':'none'; };
+function scopeParams(){ const scope=document.getElementById('rp_scope').value; const dept=document.getElementById('rp_dept')?document.getElementById('rp_dept').value:''; const stage=document.getElementById('rp_stage')?document.getElementById('rp_stage').value:''; return {scope,dept,stage}; }
+window.dlCSV=()=>{ const {scope,dept,stage}=scopeParams(); window.open('/api/report.csv'+qref()+'&scope='+encodeURIComponent(scope)+'&dept='+encodeURIComponent(dept)+'&stage='+encodeURIComponent(stage),'_blank'); };
 window.buildReport=async()=>{
-  const {scope,dept}=scopeParams();
-  const d=await api('GET','/report'+qref()+'&scope='+encodeURIComponent(scope)+'&dept='+encodeURIComponent(dept));
-  const s=d.summary; const labels={all:'Full status report',action:'Curricula requiring action',expired:'Expired curricula',due:'Curricula due for review',gaps:'Documentation gaps',dept:'Department: '+dept};
+  const {scope,dept,stage}=scopeParams();
+  const d=await api('GET','/report'+qref()+'&scope='+encodeURIComponent(scope)+'&dept='+encodeURIComponent(dept)+'&stage='+encodeURIComponent(stage));
+  const s=d.summary; const labels={all:'Full status report',action:'Curricula requiring action',expired:'Expired curricula',due:'Curricula due for review',gaps:'Documentation gaps',recognition:'Recognition gaps (offered, not recognised)',dept:'Department: '+dept,stage:'Development / validation stage: '+stage};
   const body=d.rows.map(r=>`<tr><td>${esc(r.programme)}</td><td>${esc(r.department)}</td><td class="c">${esc(r.levels)}</td><td>${fmtDate(r.valid_until)}</td><td class="c">${r.months_left==null?'—':Math.round(r.months_left)}</td><td>${esc(r.status)}</td><td>${esc(stageLabelShort(r.stage||'Pre-validation'))}</td><td>${esc(r.docs)}</td><td>${esc(state.campus?(r.campusObserved||''):(r.observed||''))}</td></tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:#657685">No records for this scope.</td></tr>';
   document.getElementById('reportOut').innerHTML=`<div class="card"><div class="official"><div class="oh"><img src="/assets/arms.png"><div class="c"><div class="l1">THE UNITED REPUBLIC OF TANZANIA</div><div class="l2">COLLEGE OF BUSINESS EDUCATION</div><div class="l3">Curriculum Development, Review &amp; Implementation — Status Report</div></div><img src="/assets/be.png"></div>
     <div class="ob"><div class="otitle">${esc(labels[scope])}</div>
