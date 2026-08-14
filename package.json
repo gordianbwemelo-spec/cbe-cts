@@ -1,0 +1,29 @@
+{
+  "name": "cbe-cts",
+  "version": "1.0.0",
+  "description": "CBE Curriculum Development, Review & Implementation Status Tracking System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "demo": "node -e \"process.env.CTS_DEMO='1';require('./server.js')\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "cbe",
+    "curriculum",
+    "tracking",
+    "review",
+    "accreditation"
+  ],
+  "author": "College of Business Education (CBE)",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.2.0"
+  }
+}

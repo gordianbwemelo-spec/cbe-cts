@@ -1,0 +1,27 @@
+# Render.com blueprint for the CBE Curriculum Tracking System.
+# In Render: New + → Blueprint → connect the repo containing this file.
+# A persistent disk keeps the database and uploaded documents across deploys.
+services:
+  - type: web
+    name: cbe-cts
+    runtime: node
+    plan: starter            # a paid instance type is required to attach a persistent disk
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/config
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CTS_DEMO
+        value: "0"           # 0 = real (empty) deployment; set to 1 only for a training instance
+      - key: DATA_DIR
+        value: /var/data
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+      - key: JWT_SECRET
+        generateValue: true
+    disk:
+      name: cbe-cts-data
+      mountPath: /var/data
+      sizeGB: 1
