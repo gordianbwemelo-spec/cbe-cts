@@ -16,6 +16,9 @@ const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : pat
 const FILE = path.join(DATA_DIR, 'db.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const DEMO = process.env.CTS_DEMO === '1' || String(process.env.CTS_DEMO).toLowerCase() === 'true';
+// OPEN access: key players click their role to enter, no password. Administrator
+// still uses a password so the data cannot be wiped by a casual visitor.
+const OPEN = process.env.CTS_OPEN === '1' || String(process.env.CTS_OPEN).toLowerCase() === 'true';
 
 const DEFAULT_DEPARTMENTS = ['Accountancy', 'Business Administration', 'ICT & Mathematics', 'Marketing', 'Procurement & Supplies Management', 'LIM'];
 const CAMPUSES = ['Dar es Salaam', 'Dodoma', 'Mbeya', 'Mwanza'];
@@ -121,7 +124,7 @@ function ensureCoreUsers() {
   let changed = false;
   CORE_ACCOUNTS.forEach(([name, email, pw, role]) => {
     if (!data.users.some(u => u.email === email)) {
-      data.users.push({ id: nextId('users'), name, email, password_hash: bcrypt.hashSync(pw, 10), role, active: 1, must_reset: DEMO ? 0 : 1, created_at: now() });
+      data.users.push({ id: nextId('users'), name, email, password_hash: bcrypt.hashSync(pw, 10), role, active: 1, must_reset: (DEMO || OPEN) ? 0 : 1, created_at: now() });
       changed = true;
     }
   });
@@ -169,7 +172,10 @@ const DEMO_PROGRAMMES = [
 ];
 function seed() {
   ensureCoreUsers();
-  if (!DEMO) { console.log('Initialised empty production database (core accounts only).'); return; }
+  // The College's programme list is loaded as the initial data in BOTH modes, so a
+  // production deployment is ready for use with every programme already present and
+  // can be updated where necessary. DEMO only affects account passwords and the
+  // sample sign-in shortcuts on the login page.
   DEMO_PROGRAMMES.forEach(p => {
     p.levels.forEach(lvl => {
       const f = Object.assign({ validation:'Available', recognition:'Available', stamped:'Available', valid_until:'', observed:'', notes:'' }, p.base, (p.over && p.over[lvl]) || {});
@@ -186,7 +192,7 @@ function seed() {
     });
   });
   const offerings = data.curricula.reduce((s, c) => s + CAMPUSES.filter(cn => c.campuses[cn] && c.campuses[cn].offered).length, 0);
-  console.log('Initialised demo data: ' + data.curricula.length + ' curricula across ' + DEMO_PROGRAMMES.length + ' programmes, ' + offerings + ' campus offerings.');
+  console.log('Initialised database: ' + data.curricula.length + ' curricula across ' + DEMO_PROGRAMMES.length + ' programmes, ' + offerings + ' campus offerings' + (DEMO ? '  [DEMO/training mode]' : '  [PRODUCTION — accounts set their own password on first sign-in]') + '.');
 }
 
 load();
@@ -195,6 +201,7 @@ load();
 const repo = {
   getUserByEmail: (email) => data.users.find(u => u.email === (email || '').toLowerCase().trim() && u.active),
   getUserById: (id) => data.users.find(u => u.id === id && u.active),
+  getCoreUserByRole: (role) => data.users.find(u => u.role === role && u.active),
   listUsers: () => data.users.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active })).sort((a, b) => (a.role + a.name).localeCompare(b.role + b.name)),
   createUser: ({ name, email, password, role }) => {
     email = (email || '').toLowerCase().trim();

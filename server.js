@@ -12,6 +12,8 @@ const notify = require('./src/notify');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DEMO = process.env.CTS_DEMO === '1' || String(process.env.CTS_DEMO).toLowerCase() === 'true';
+const OPEN = process.env.CTS_OPEN === '1' || String(process.env.CTS_OPEN).toLowerCase() === 'true';
+const OPEN_ROLES = ['management', 'director', 'qam', 'coordinator']; // Administrator excluded — stays password-protected
 const UP_DIR = process.env.UPLOADS_DIR ? path.resolve(process.env.UPLOADS_DIR) : path.join(__dirname, 'uploads');
 if (!fs.existsSync(UP_DIR)) fs.mkdirSync(UP_DIR, { recursive: true });
 
@@ -59,7 +61,19 @@ function leadOf(req) { const q = parseInt(req.query.lead); return (q >= 1 && q <
 function campusOf(req) { const c = req.query.campus; return (c && S.CAMPUSES.includes(c)) ? c : ''; } // '' = all campuses
 
 // ---------------- public config ----------------
-app.get('/api/config', (req, res) => res.json({ demo: DEMO, appName: 'CBE Curriculum Tracking System' }));
+app.get('/api/config', (req, res) => res.json({ demo: DEMO, open: OPEN, appName: 'CBE Curriculum Tracking System' }));
+
+// Passwordless role sign-in for key players (only when OPEN access is enabled).
+app.post('/api/login-role', (req, res) => {
+  if (!OPEN) return res.status(403).json({ error: 'Quick access is not enabled' });
+  const role = String((req.body && req.body.role) || '');
+  if (!OPEN_ROLES.includes(role)) return res.status(400).json({ error: 'That role is not available for quick access' });
+  const u = repo.getCoreUserByRole(role);
+  if (!u) return res.status(404).json({ error: 'No account for that role' });
+  auth.issue(res, u);
+  audit(u.email, 'login-role', 'user#' + u.id, role);
+  res.json({ user: { id: u.id, name: u.name, email: u.email, role: u.role, must_reset: false } });
+});
 
 // ---------------- auth ----------------
 app.post('/api/login', loginLimiter, (req, res) => {

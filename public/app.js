@@ -48,6 +48,28 @@ async function boot(){
 
 /* ---------- login ---------- */
 function renderLogin(err){
+  if(state.config && state.config.open){
+    App.innerHTML=`<div class="login-wrap"><div class="login-card">
+      <img src="/assets/be.png" alt="CBE">
+      <h1>Curriculum Tracking System</h1>
+      <p class="sub">College of Business Education · Development, Review &amp; Implementation</p>
+      <p class="note" style="text-align:center;margin:6px 0 14px;font-weight:700;color:var(--navy)">Select your role to continue</p>
+      <div class="demo-accts" style="border:0;padding:0;margin:0">
+        <button onclick="loginRole('management')">Management</button>
+        <button onclick="loginRole('director')">Director of Academics</button>
+        <button onclick="loginRole('qam')">Quality Assurance Manager</button>
+        <button onclick="loginRole('coordinator')">Curriculum Coordinator</button>
+      </div>
+      <div class="login-err">${err?esc(err):''}</div>
+      <div class="note" style="margin-top:16px;text-align:center"><a onclick="showAdmin()">System administrator sign-in</a></div>
+      <div id="adminBox" style="display:none;margin-top:10px">
+        <div class="fld"><label>Email</label><input id="email" type="email" placeholder="admin@cbe.ac.tz"></div>
+        <div class="fld"><label>Password</label><input id="pw" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+        <button onclick="doLogin()">Sign in</button>
+      </div>
+    </div></div>`;
+    return;
+  }
   App.innerHTML=`<div class="login-wrap"><div class="login-card">
     <img src="/assets/be.png" alt="CBE">
     <h1>Curriculum Tracking System</h1>
@@ -73,6 +95,11 @@ window.doLogin=async()=>{
     state.user=r.user; state.meta=await api('GET','/meta'); state.lead=state.meta.settings.leadMonths||8; await afterLogin();
   }catch(e){ renderLogin(e.message); }
 };
+window.loginRole=async(role)=>{
+  try{ const r=await api('POST','/login-role',{role}); state.user=r.user; state.meta=await api('GET','/meta'); state.lead=state.meta.settings.leadMonths||8; await afterLogin(); }
+  catch(e){ renderLogin(e.message); }
+};
+window.showAdmin=()=>{ const b=document.getElementById('adminBox'); if(b){ b.style.display='block'; const e=document.getElementById('email'); if(e) e.focus(); } };
 window.logout=async()=>{ await api('POST','/logout'); state.user=null; renderLogin(); };
 
 function renderReset(){
