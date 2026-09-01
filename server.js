@@ -260,7 +260,17 @@ function reportRows(scope, dept, ref, lead, campus, stage) {
 app.get('/api/report', auth.requireAuth, (req, res) => {
   const ref = refOf(req), lead = leadOf(req), scope = req.query.scope || 'all', dept = req.query.dept || '', campus = campusOf(req), stage = req.query.stage || '';
   const summary = campus ? S.summariseCampus(repo.listCurricula(), campus, ref, lead) : S.summarise(repo.listCurricula(), ref, lead);
-  res.json({ ref, lead, scope, dept, stage, campus: campus || 'All campuses', summary, rows: reportRows(scope, dept, ref, lead, campus, stage) });
+  // Expired curricula split by whether a review / redevelopment initiative is already under way.
+  const activeStages = STAGES.filter(s => s !== 'Currently implemented');
+  const fullRows = campus ? repo.listCurricula().map(c => S.projectCampus(c, campus, ref, lead)).filter(r => r.offered)
+                          : repo.listCurricula().map(c => S.enrich(c, ref, lead));
+  const expiredRows = fullRows.filter(r => r.status === 'Expired');
+  const expiredBreakdown = {
+    total: expiredRows.length,
+    inReview: expiredRows.filter(r => activeStages.indexOf(r.stage) >= 0).length,
+    notStarted: expiredRows.filter(r => activeStages.indexOf(r.stage) < 0).length
+  };
+  res.json({ ref, lead, scope, dept, stage, campus: campus || 'All campuses', summary, expiredBreakdown, rows: reportRows(scope, dept, ref, lead, campus, stage) });
 });
 app.get('/api/report.csv', auth.requireAuth, (req, res) => {
   const ref = refOf(req), lead = leadOf(req), scope = req.query.scope || 'all', dept = req.query.dept || '', campus = campusOf(req), stage = req.query.stage || '';

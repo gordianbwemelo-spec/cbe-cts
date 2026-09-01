@@ -33,6 +33,11 @@ const STAGE_COLOR={
   'Currently implemented':'#1f9d63'
 };
 function stageLabelShort(s){ return s==='Incorporation of validation committee comments'?'Incorporating committee comments':(s==='Validated – awaiting departmental recognition'?'Validated – awaiting recognition':s); }
+// Stages that mean a review / redevelopment initiative is ALREADY under way.
+// An expired curriculum at one of these stages is being addressed; only an expired
+// curriculum NOT at one of these (e.g. still "Currently implemented") needs a review started.
+const ACTIVE_REVIEW_STAGES=['Pre-validation','Incorporation of validation committee comments','Post-validation','Validated – awaiting departmental recognition'];
+function reviewUnderway(stage){ return ACTIVE_REVIEW_STAGES.indexOf(stage)>=0; }
 function stagePill(s){ const c=STAGE_COLOR[s]||'#657685'; return `<span class="pill" style="background:${c}22;color:${c};border:1px solid ${c}55" title="${esc(s||'')}">${esc(stageLabelShort(s||'Pre-validation'))}</span>`; }
 function speak(text){
   if(!('speechSynthesis' in window)){ toast('Voice not supported in this browser'); return; }
@@ -217,16 +222,44 @@ async function viewDashboard(m){
 function execNarrative(d){
   const s=d.summary, ref=fmtDate(d.ref);
   const scope = (d.campus && d.campus!=='All campuses') ? d.campus+' campus' : 'the College';
-  const expired=d.alerts.filter(a=>a.status==='Expired');
-  const top=expired.slice(0,3).map(a=>`${a.programme} (NTA ${a.levels})`);
+  const campusScope = !!(d.campus && d.campus!=='All campuses');
+  const b = x => `<b>${x}</b>`;
+  // Split expired curricula into those already under review and those with no review started.
+  const expired = d.alerts.filter(a=>a.status==='Expired');
+  const notStarted = expired.filter(a=>!reviewUnderway(a.stage));
+  const inReview = expired.filter(a=>reviewUnderway(a.stage));
   const parts=[];
-  const campusClause = (d.campus && d.campus!=='All campuses') ? '' : ` in <b>${(d.campusList||[]).length}</b> campuses`;
-  parts.push(`As at <b>${ref}</b>, ${scope} is tracking <b>${s.total}</b> curricula across <b>${d.programmes}</b> programme${d.programmes!==1?'s':''} and <b>${d.departments}</b> department${d.departments!==1?'s':''}${campusClause}.`);
-  parts.push(`Of these, <b>${s.Valid}</b> are valid, <b>${s['Due for review']}</b> are due for review within the next <b>${d.lead} months</b>, and <b>${s.Expired}</b> have already expired. <b>${s.Unverified}</b> are unverified or lack valid documents.`);
-  parts.push(`<b>${s.gaps}</b> have documentation gaps, and <b>${s.recognitionGaps||0}</b> ${(d.campus&&d.campus!=='All campuses')?'are offered here without departmental recognition':'campus offerings lack departmental recognition'}.`);
-  if(s.Expired) parts.push(`<b>Most urgent:</b> ${s.Expired} expired curricula require review immediately${top.length?`, including ${top.join(', ')}`:''}.`);
-  else if(s['Due for review']) parts.push(`<b>Action:</b> ${s['Due for review']} curricula are within the review window — reviews should be initiated now.`);
-  else parts.push(`No curricula are currently overdue or within the review window.`);
+  const campusClause = campusScope ? '' : ` in ${b((d.campusList||[]).length)} campuses`;
+  parts.push(`As at ${b(ref)}, ${scope} is tracking ${b(s.total)} curricula across ${b(d.programmes)} programme${d.programmes!==1?'s':''} and ${b(d.departments)} department${d.departments!==1?'s':''}${campusClause}.`);
+
+  const validClause = s.Valid>0 ? `${b(s.Valid)} are valid` : 'none are valid';
+  const dueClause = s['Due for review']>0 ? `${b(s['Due for review'])} are due for review within the next ${b(d.lead+' months')}` : `none are due for review within the next ${b(d.lead+' months')}`;
+  const expClause = s.Expired>0 ? `${b(s.Expired)} have expired` : 'none have expired';
+  parts.push(`Of these, ${validClause}, ${dueClause}, and ${expClause}.`);
+
+  const unvClause = s.Unverified>0 ? `${b(s.Unverified)} are unverified or lack valid documents` : 'No curricula are unverified or lacking valid documents';
+  const gapsClause = s.gaps>0 ? `${b(s.gaps)} have documentation gaps` : 'no curricula have documentation gaps';
+  const recogClause = (s.recognitionGaps>0)
+      ? `${b(s.recognitionGaps)} ${campusScope?'are offered here without departmental recognition':'campus offerings lack departmental recognition'}`
+      : (campusScope?'no programme is offered here without departmental recognition':'no campus offerings lack departmental recognition');
+  parts.push(`${unvClause}. As for documents and recognition, ${gapsClause}, and ${recogClause}.`);
+
+  // Expired: report the current initiative rather than blanketing everything as "review immediately".
+  if(notStarted.length){
+    const one = notStarted.length===1;
+    const top = notStarted.slice(0,3).map(a=>`${a.programme} (NTA ${a.levels})`);
+    parts.push(`${b('Most urgent:')} ${b(notStarted.length)} expired ${one?'curriculum has':'curricula have'} no review under way and ${one?'requires':'require'} a review to be initiated immediately${top.length?`, including ${top.join(', ')}`:''}.`);
+  }
+  if(inReview.length){
+    const grp={}; inReview.forEach(a=>{ const st=a.stage||'Pre-validation'; grp[st]=(grp[st]||0)+1; });
+    const segs=Object.keys(grp).map(st=>`${grp[st]} at ${st.toLowerCase()}`);
+    const one = inReview.length===1;
+    parts.push(`A further ${b(inReview.length)} expired ${one?'curriculum is':'curricula are'} already under review (${segs.join('; ')}) and ${one?'is':'are'} being addressed — ${one?'it does':'they do'} not need a fresh review to be started.`);
+  }
+  if(!expired.length){
+    if(s['Due for review']) parts.push(`${b('Action:')} ${b(s['Due for review'])} curricula are within the review window — reviews should be initiated now.`);
+    else parts.push(`No curricula are currently overdue or within the review window.`);
+  }
   return parts.join(' ');
 }
 function execSummaryPanel(d){
@@ -252,9 +285,12 @@ async function viewExec(m){
   try{ const g=await api('GET','/report'+qref()+'&scope=recognition'); recog=g.rows||[]; }catch(e){}
   const s=d.summary;
   const expired=d.alerts.filter(a=>a.status==='Expired');
+  const expiredNotStarted=expired.filter(a=>!reviewUnderway(a.stage));
+  const expiredInReview=expired.filter(a=>reviewUnderway(a.stage));
   const due=d.alerts.filter(a=>a.status==='Due for review');
   const priorities=[];
-  if(s.Expired) priorities.push(`Initiate curriculum review immediately for the <b>${s.Expired}</b> expired curricula.`);
+  if(expiredNotStarted.length) priorities.push(`Initiate a curriculum review immediately for the <b>${expiredNotStarted.length}</b> expired ${expiredNotStarted.length===1?'curriculum':'curricula'} with no review under way.`);
+  if(expiredInReview.length) priorities.push(`Progress to completion the <b>${expiredInReview.length}</b> expired ${expiredInReview.length===1?'curriculum':'curricula'} already under review, so they are re-validated without further delay.`);
   if(s['Due for review']) priorities.push(`Begin the review process for <b>${s['Due for review']}</b> curricula entering the ${d.lead}-month review window.`);
   if(s.recognitionGaps) priorities.push(`Secure departmental recognition for <b>${s.recognitionGaps}</b> campus offering(s) currently run without it.`);
   if(s.gaps) priorities.push(`Obtain the missing documents (approval letters / departmental recognition / stamped copies) for <b>${s.gaps}</b> curricula.`);
@@ -645,12 +681,12 @@ window.dlCSV=()=>{ const {scope,dept,stage}=scopeParams(); window.open('/api/rep
 window.buildReport=async()=>{
   const {scope,dept,stage}=scopeParams();
   const d=await api('GET','/report'+qref()+'&scope='+encodeURIComponent(scope)+'&dept='+encodeURIComponent(dept)+'&stage='+encodeURIComponent(stage));
-  const s=d.summary; const labels={all:'Full status report',action:'Curricula requiring action',expired:'Expired curricula',due:'Curricula due for review',gaps:'Documentation gaps',recognition:'Recognition gaps (offered, not recognised)',dept:'Department: '+dept,stage:'Development / validation stage: '+stage};
+  const s=d.summary; const eb=d.expiredBreakdown||{total:s.Expired||0,inReview:0,notStarted:s.Expired||0}; const nb=(x,w)=>x>0?`<b>${x}</b> ${w}`:`no ${w}`; const labels={all:'Full status report',action:'Curricula requiring action',expired:'Expired curricula',due:'Curricula due for review',gaps:'Documentation gaps',recognition:'Recognition gaps (offered, not recognised)',dept:'Department: '+dept,stage:'Development / validation stage: '+stage};
   const body=d.rows.map(r=>`<tr><td>${esc(r.programme)}</td><td>${esc(r.department)}</td><td class="c">${esc(r.levels)}</td><td>${fmtDate(r.valid_until)}</td><td class="c">${r.months_left==null?'—':Math.round(r.months_left)}</td><td>${esc(r.status)}</td><td>${esc(stageLabelShort(r.stage||'Pre-validation'))}</td><td>${esc(r.docs)}</td><td>${esc(state.campus?(r.campusObserved||''):(r.observed||''))}</td></tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:#657685">No records for this scope.</td></tr>';
   document.getElementById('reportOut').innerHTML=`<div class="card"><div class="official"><div class="oh"><img src="/assets/arms.png"><div class="c"><div class="l1">THE UNITED REPUBLIC OF TANZANIA</div><div class="l2">COLLEGE OF BUSINESS EDUCATION</div><div class="l3">Curriculum Development, Review &amp; Implementation — Status Report</div></div><img src="/assets/be.png"></div>
     <div class="ob"><div class="otitle">${esc(labels[scope])}</div>
     <table class="tbl"><tr><th style="width:170px">Generated</th><td>${fmtDate(d.ref)}</td></tr><tr><th>Prepared by</th><td>${esc(state.user.name)} (${ROLE_LABEL[state.user.role]})</td></tr><tr><th>Review lead time</th><td>${d.lead} months before expiry</td></tr></table>
-    <div class="banner" style="margin-top:12px"><b>Executive summary.</b> As at ${fmtDate(d.ref)}, the College tracks <b>${s.total}</b> curricula: <b>${s.Valid}</b> valid, <b>${s['Due for review']}</b> due for review (within ${d.lead} months), <b>${s.Expired}</b> expired, <b>${s['Pending approval']}</b> pending approval and <b>${s.Unverified}</b> unverified. <b>${s.gaps}</b> have documentation gaps requiring attention.</div>
+    <div class="banner" style="margin-top:12px"><b>Executive summary.</b> As at ${fmtDate(d.ref)}, ${state.campus?esc(state.campus)+' campus':'the College'} tracks <b>${s.total}</b> curricula: ${nb(s.Valid,'valid')}, ${nb(s['Due for review'],'due for review (within '+d.lead+' months)')}, ${nb(s.Expired,'expired')}, ${nb(s['Pending approval'],'pending approval')} and ${nb(s.Unverified,'unverified')}.${eb.total>0?` Of the expired, ${eb.notStarted>0?`<b>${eb.notStarted}</b> ${eb.notStarted===1?'has':'have'} no review under way and ${eb.notStarted===1?'needs':'need'} a review started`:'all are already under review'}${eb.notStarted>0&&eb.inReview>0?`, while <b>${eb.inReview}</b> ${eb.inReview===1?'is':'are'} already under review`:(eb.notStarted===0&&eb.inReview>0?` (<b>${eb.inReview}</b>)`:'')}.`:''} ${s.gaps>0?`<b>${s.gaps}</b> have documentation gaps requiring attention`:'No documentation gaps were found'}.</div>
     <h2 style="margin:14px 0 8px;font-size:18px">Details (${d.rows.length} record${d.rows.length!==1?'s':''})</h2>
     <div style="overflow:auto"><table class="tbl"><thead><tr><th>Programme</th><th>Department</th><th class="c">NTA</th><th>Valid Until</th><th class="c">Months</th><th>Status</th><th>Dev. stage</th><th>Docs</th><th>Implementation</th></tr></thead><tbody>${body}</tbody></table></div>
     <div class="note">Generated by the CBE Curriculum Tracking System. Source data: Curriculum Availability, Implementation and Validity Verification (Sept 2025).</div>
