@@ -438,6 +438,20 @@ async function viewDetail(m){
     return `<tr><td><b>${esc(cn)}</b></td><td class="c">${co.offered?'Yes':'—'}</td><td>${rec}</td><td>${esc(co.stamped)}</td><td>${esc(co.observed||'')}</td></tr>`;
   }).join('');
   const recGap = (r.recognitionGaps&&r.recognitionGaps.length)?`<div class="banner" style="background:#fdeee4;border-color:#f0c4a8;color:#8a3a12"><b>Recognition gap:</b> offered without departmental recognition at ${r.recognitionGaps.map(esc).join(', ')}.</div>`:'';
+  // Focused per-campus editor — shown when a single campus is selected, so editing a curriculum applies to that campus directly.
+  const campusEditCard = (state.campus && canEdit) ? (function(){
+    const cn=state.campus; const co=(r.campuses&&r.campuses[cn])||{offered:false,recognition:'Missing',stamped:'Missing',observed:'Not offered'};
+    return `<div class="card" style="margin-top:14px;border-left:4px solid var(--blue)"><h2>Update this curriculum at ${esc(cn)}</h2>
+      <div class="sub">Edit how <b>${esc(r.programme)} (NTA ${esc(r.levels)})</b> applies at <b>${esc(cn)}</b> only. The national curriculum details are not changed.</div>
+      <div class="row">
+        <div class="fld"><label>Offered at ${esc(cn)}?</label><select id="ce_off"><option value="yes" ${co.offered?'selected':''}>Yes — offered here</option><option value="no" ${!co.offered?'selected':''}>No — not offered here</option></select></div>
+        <div class="fld"><label>Departmental recognition</label><select id="ce_rec">${recOpt(co.recognition)}</select></div>
+        <div class="fld"><label>Stamped copy held</label><select id="ce_stp">${stpOpt(co.stamped)}</select></div>
+      </div>
+      <div class="fld"><label>Implementation / enrolment at ${esc(cn)}</label><input type="text" id="ce_obs" value="${esc(co.observed||'')}" placeholder="e.g. Currently implemented; 40 students enrolled"></div>
+      <div class="actions"><button class="btn primary small" onclick="saveOneCampus(${r.id})">💾 Save ${esc(cn)} status</button></div>
+    </div>`;
+  })() : '';
   m.innerHTML=`<h1 class="page">${esc(r.programme)}</h1><p class="lead">${esc(r.department)} · NTA ${esc(r.levels)} · offered at: ${(r.offeredCampuses&&r.offeredCampuses.length)?r.offeredCampuses.map(esc).join(', '):'—'}</p>
     <div class="actions" style="margin-top:0">
       <button class="btn ghost small" onclick="go('register')">← Back to register</button>
@@ -446,7 +460,8 @@ async function viewDetail(m){
       ${canEdit?`<button class="btn small" style="background:#fdecef;color:#c0324a" onclick="deleteCur(${r.id},'${esc(r.programme).replace(/'/g,'')}')">🗑 Delete record</button>`:''}
     </div>
     ${recGap}
-    <div class="card" style="margin-top:14px"><h2>Per-campus status</h2><div class="sub">The curriculum is national; each campus must have its department recognised to offer it. ${canEdit?'Edit and save below.':''}</div>
+    ${campusEditCard}
+    <div class="card" style="margin-top:14px"><h2>Per-campus status${state.campus?' — all campuses':''}</h2><div class="sub">The curriculum is national; each campus must have its department recognised to offer it. ${canEdit?'Edit and save below.':''}</div>
       <table class="tbl camptbl"><thead><tr><th style="width:150px">Campus</th><th class="c">Offered?</th><th>Departmental recognition</th><th>Stamped copy held</th><th>Implementation / enrolment</th></tr></thead>
       <tbody id="campusBody">${campusRows}</tbody></table>
       ${canEdit?`<div class="actions"><button class="btn primary small" onclick="saveCampuses(${r.id})">💾 Save per-campus status</button></div>`:''}
@@ -526,6 +541,18 @@ window.saveCampuses=async(id)=>{
     };
   });
   try{ await api('PUT','/curricula/'+id,{campuses}); toast('Per-campus status saved'); renderApp(); }
+  catch(e){ toast(e.message); }
+};
+window.saveOneCampus=async(id)=>{
+  const cn=state.campus; if(!cn){ toast('Select a campus first'); return; }
+  const body={campuses:{}};
+  body.campuses[cn]={
+    offered: document.getElementById('ce_off').value==='yes',
+    recognition: document.getElementById('ce_rec').value,
+    stamped: document.getElementById('ce_stp').value,
+    observed: document.getElementById('ce_obs').value.trim()
+  };
+  try{ await api('PUT','/curricula/'+id,body); toast(cn+' status saved'); renderApp(); }
   catch(e){ toast(e.message); }
 };
 window.editCur=(id)=>{ state.editId=id; state.view='entry'; renderApp(); };
