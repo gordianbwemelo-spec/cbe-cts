@@ -20,7 +20,7 @@ const DEMO = process.env.CTS_DEMO === '1' || String(process.env.CTS_DEMO).toLowe
 // still uses a password so the data cannot be wiped by a casual visitor.
 const OPEN = process.env.CTS_OPEN === '1' || String(process.env.CTS_OPEN).toLowerCase() === 'true';
 
-const DEFAULT_DEPARTMENTS = ['Accountancy', 'Business Administration', 'ICT & Mathematics', 'Marketing', 'Procurement & Supplies Management', 'LIM'];
+const DEFAULT_DEPARTMENTS = ['Accountancy', 'Business Administration', 'Education', 'ICT & Mathematics', 'Marketing', 'Procurement & Supplies Management', 'LIM'];
 const CAMPUSES = ['Dar es Salaam', 'Dodoma', 'Mbeya', 'Mwanza'];
 const DEFAULT_SETTINGS = { leadMonths: 8, recipientEmails: '', recipientPhones: '', channels: { dashboard: true, email: true, sms: true, voice: false } };
 const NTA_LEVELS = [4, 5, 6, 7, 8, 9];
@@ -62,6 +62,10 @@ function load() {
   if (fs.existsSync(FILE)) {
     data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
     if (!data.lists) data.lists = { departments: DEFAULT_DEPARTMENTS.slice(), campuses: CAMPUSES.slice() };
+    // Merge any newly-introduced standard departments (e.g. Education) into an existing database.
+    let _deptAdded = false;
+    DEFAULT_DEPARTMENTS.forEach(d => { if (!data.lists.departments.some(x => String(x).toLowerCase() === d.toLowerCase())) { data.lists.departments.push(d); _deptAdded = true; } });
+    if (_deptAdded) data.lists.departments.sort((a, b) => a.localeCompare(b));
     if (!data.settings) data.settings = { ...DEFAULT_SETTINGS };
     if (!data.notifications) data.notifications = [];
     ensureCoreUsers();
