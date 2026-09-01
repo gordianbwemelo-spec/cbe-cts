@@ -222,7 +222,47 @@ const repo = {
 
   lists() { return { departments: (data.lists.departments || []).slice(), campuses: (data.lists.campuses || CAMPUSES).slice() }; },
   campuses: () => CAMPUSES.slice(),
-  addDepartment(name) { name = String(name || '').trim(); if (!name) return; if (!data.lists.departments.some(p => p.toLowerCase() === name.toLowerCase())) { data.lists.departments.push(name); data.lists.departments.sort(); save(); } },
+  addDepartment(name, actor) {
+    name = String(name || '').trim();
+    if (!name) return { error: 'Please enter a department name.' };
+    if (data.lists.departments.some(p => p.toLowerCase() === name.toLowerCase())) return { error: 'A department with that name already exists.' };
+    data.lists.departments.push(name); data.lists.departments.sort(); save();
+    audit(actor, 'add-department', 'department', name);
+    return { ok: true };
+  },
+  departmentCounts() {
+    const counts = {};
+    (data.lists.departments || []).forEach(d => { counts[d] = 0; });
+    (data.curricula || []).forEach(c => { if (c.department) counts[c.department] = (counts[c.department] || 0) + 1; });
+    return Object.keys(counts).sort((a, b) => a.localeCompare(b)).map(name => ({ name, count: counts[name] }));
+  },
+  renameDepartment(from, to, actor) {
+    from = String(from || '').trim(); to = String(to || '').trim();
+    if (!from || !to) return { error: 'Both the current and the new department name are required.' };
+    const list = data.lists.departments || (data.lists.departments = []);
+    if (!list.some(d => d === from)) return { error: 'That department was not found.' };
+    if (to.toLowerCase() !== from.toLowerCase() && list.some(d => d.toLowerCase() === to.toLowerCase()))
+      return { error: 'A department named "' + to + '" already exists.' };
+    for (let i = 0; i < list.length; i++) if (list[i] === from) list[i] = to;
+    let changed = 0;
+    (data.curricula || []).forEach(c => { if (c.department === from) { c.department = to; changed++; } });
+    data.lists.departments = [...new Set(list)].sort((a, b) => a.localeCompare(b));
+    save();
+    audit(actor, 'rename-department', 'department', from + ' -> ' + to + ' (' + changed + ' curricula updated)');
+    return { ok: true, changed };
+  },
+  removeDepartment(name, actor) {
+    name = String(name || '').trim();
+    if (!name) return { error: 'Please enter a department name.' };
+    const inUse = (data.curricula || []).filter(c => c.department === name).length;
+    if (inUse > 0) return { error: 'This department still has ' + inUse + ' curriculum record(s). Rename it, or move those records to another department first.' };
+    const before = (data.lists.departments || []).length;
+    data.lists.departments = (data.lists.departments || []).filter(d => d !== name);
+    if (data.lists.departments.length === before) return { error: 'That department was not found.' };
+    save();
+    audit(actor, 'remove-department', 'department', name);
+    return { ok: true };
+  },
   addCampus(name) { name = String(name || '').trim(); if (!name) return; if (!data.lists.campuses.some(c => c.toLowerCase() === name.toLowerCase())) { data.lists.campuses.push(name); data.lists.campuses.sort(); save(); } },
   getSettings() { return JSON.parse(JSON.stringify(data.settings)); },
   saveSettings(s) {

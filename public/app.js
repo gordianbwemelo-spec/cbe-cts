@@ -135,6 +135,7 @@ function navItems(){
   if(m.canEdit) items.push(['entry','＋','Add / Update']);
   if(m.canEdit) items.push(['notify','🔔','Notifications']);
   items.push(['reports','▣','Reports']);
+  if(m.canSettings) items.push(['departments','▥','Departments']);
   if(m.canSettings) items.push(['settings','⚙','Settings']);
   if(m.canSettings) items.push(['audit','◷','Audit Log']);
   if(m.isAdmin) items.push(['users','◎','Users']);
@@ -163,6 +164,7 @@ async function route(){
     if(state.view==='detail') return viewDetail(m);
     if(state.view==='notify') return viewNotify(m);
     if(state.view==='reports') return viewReports(m);
+    if(state.view==='departments') return viewDepartments(m);
     if(state.view==='settings') return viewSettings(m);
     if(state.view==='audit') return viewAudit(m);
     if(state.view==='users') return viewUsers(m);
@@ -233,14 +235,14 @@ function execSummaryPanel(d){
       <button class="btn ghost small" onclick="speakExec()">🔊 Read aloud</button>
       <button class="btn ghost small" onclick="printExec()">🖨 Print</button></div>
     <div class="sub">Plain-language overview for management · ${fmtDate(d.ref)}</div>
-    <p id="execText" style="font-size:14.5px;line-height:1.7;margin:0">${execNarrative(d)}</p>
+    <p id="execText" style="font-size:17px;line-height:1.7;margin:0">${execNarrative(d)}</p>
   </div>`;
 }
 window.speakExec=()=>{ const t=document.getElementById('execText'); if(t) speak(t.textContent); };
 window.printExec=()=>{
   const t=document.getElementById('execText'); if(!t) return;
   const w=window.open('','_blank');
-  w.document.write('<html><head><title>CBE Curriculum — Executive Summary</title></head><body style="font-family:system-ui,-apple-system,sans-serif;padding:36px;max-width:760px;color:#111"><h2 style="color:#0d3b66">College of Business Education</h2><h3 style="margin-top:0;color:#0d3b66">Curriculum Development, Review &amp; Implementation — Executive Summary</h3><p style="line-height:1.8;font-size:15px">'+t.innerHTML+'</p></body></html>');
+  w.document.write('<html><head><title>CBE Curriculum — Executive Summary</title></head><body style="font-family:Tahoma,Geneva,Verdana,sans-serif;padding:36px;max-width:760px;color:#111"><h2 style="color:#0d3b66">College of Business Education</h2><h3 style="margin-top:0;color:#0d3b66">Curriculum Development, Review &amp; Implementation — Executive Summary</h3><p style="line-height:1.8;font-size:15px">'+t.innerHTML+'</p></body></html>');
   w.document.close(); setTimeout(()=>{ w.print(); }, 200);
 };
 /* ---------- executive summary (dedicated page) ---------- */
@@ -258,7 +260,7 @@ async function viewExec(m){
   if(s.gaps) priorities.push(`Obtain the missing documents (approval letters / departmental recognition / stamped copies) for <b>${s.gaps}</b> curricula.`);
   if(s['Pending approval']) priorities.push(`Finalise approvals for <b>${s['Pending approval']}</b> curricula that are ready for implementation.`);
   priorities.push(`Ensure every curriculum's review starts at least <b>${d.lead} months</b> before its expiry date.`);
-  const listBlock=(title,rows,fmt)=> rows.length?`<h3 style="margin:16px 0 6px;font-size:14px;color:var(--navy)">${title} (${rows.length})</h3><table class="tbl"><tbody>${rows.slice(0,10).map(fmt).join('')}</tbody></table>${rows.length>10?`<div class="note">…and ${rows.length-10} more.</div>`:''}`:'';
+  const listBlock=(title,rows,fmt)=> rows.length?`<h3 style="margin:16px 0 6px;font-size:15px;color:var(--navy)">${title} (${rows.length})</h3><table class="tbl"><tbody>${rows.slice(0,10).map(fmt).join('')}</tbody></table>${rows.length>10?`<div class="note">…and ${rows.length-10} more.</div>`:''}`:'';
   m.innerHTML=`<div class="actions no-print" style="margin-top:0"><h1 class="page" style="flex:1">Executive Summary</h1>
       <button class="btn ghost small" onclick="speakExec()">🔊 Read aloud</button>
       <button class="btn primary small" onclick="window.print()">🖨 Print / PDF</button></div>
@@ -268,11 +270,11 @@ async function viewExec(m){
       <div class="official"><div class="oh"><img src="/assets/arms.png"><div class="c"><div class="l1">THE UNITED REPUBLIC OF TANZANIA</div><div class="l2">COLLEGE OF BUSINESS EDUCATION</div><div class="l3">Curriculum Development, Review &amp; Implementation — Executive Summary</div></div><img src="/assets/be.png"></div>
       <div class="ob">
         <table class="tbl" style="margin-bottom:14px"><tr><th style="width:180px">As at</th><td>${fmtDate(d.ref)}</td></tr><tr><th>Prepared by</th><td>${esc(state.user.name)} (${ROLE_LABEL[state.user.role]||state.user.role})</td></tr><tr><th>Review lead time</th><td>${d.lead} months before expiry</td></tr></table>
-        <p id="execText" style="font-size:15px;line-height:1.8;margin:0 0 14px">${execNarrative(d)}</p>
+        <p id="execText" style="font-size:17px;line-height:1.8;margin:0 0 14px">${execNarrative(d)}</p>
         <div class="kpis" style="grid-template-columns:repeat(6,1fr)">
           ${[['Total',s.total],['Valid',s.Valid],['Due',s['Due for review']],['Expired',s.Expired],['Pending',s['Pending approval']],['Doc gaps',s.gaps]].map(k=>`<div class="kpi"><div class="lab">${k[0]}</div><div class="val">${k[1]}</div></div>`).join('')}
         </div>
-        <h3 style="margin:18px 0 6px;font-size:14px;color:var(--navy)">Recommended priorities</h3>
+        <h3 style="margin:18px 0 6px;font-size:15px;color:var(--navy)">Recommended priorities</h3>
         <ol style="margin:0;padding-left:20px;line-height:1.9">${priorities.map(p=>`<li>${p}</li>`).join('')}</ol>
         ${listBlock('Expired — review overdue',expired,r=>`<tr><td><b>${esc(r.programme)}</b> — NTA ${esc(r.levels)} <span class="muted">(${esc(r.department)})</span></td><td style="width:150px">${r.valid_until?('expired '+fmtDate(r.valid_until)):'no date'}</td></tr>`)}
         ${listBlock('Due for review within the lead window',due,r=>`<tr><td><b>${esc(r.programme)}</b> — NTA ${esc(r.levels)} <span class="muted">(${esc(r.department)})</span></td><td style="width:150px">expires ${fmtDate(r.valid_until)}</td></tr>`)}
@@ -432,7 +434,7 @@ async function viewDetail(m){
         <button class="btn primary small" onclick="saveReview(${r.id})">Save stage</button>`
         :`<p>Responsible: ${esc(r.reviewer)||'—'}<br>Since: ${fmtDate(r.review_started)}</p>`}
         <hr style="border:none;border-top:1px solid var(--line);margin:16px 0">
-        <h2 style="font-size:15px">Document library</h2><div class="sub">Approval/validation letters, the full curriculum document, stamped copies, review reports and more. Any signed-in user can download; editing roles can add or remove. Up to ${state.meta.maxUploadMb} MB per file.</div>
+        <h2 style="font-size:18px">Document library</h2><div class="sub">Approval/validation letters, the full curriculum document, stamped copies, review reports and more. Any signed-in user can download; editing roles can add or remove. Up to ${state.meta.maxUploadMb} MB per file.</div>
         ${docLibrary(r,canEdit)}
       </div>
     </div>`;
@@ -649,12 +651,42 @@ window.buildReport=async()=>{
     <div class="ob"><div class="otitle">${esc(labels[scope])}</div>
     <table class="tbl"><tr><th style="width:170px">Generated</th><td>${fmtDate(d.ref)}</td></tr><tr><th>Prepared by</th><td>${esc(state.user.name)} (${ROLE_LABEL[state.user.role]})</td></tr><tr><th>Review lead time</th><td>${d.lead} months before expiry</td></tr></table>
     <div class="banner" style="margin-top:12px"><b>Executive summary.</b> As at ${fmtDate(d.ref)}, the College tracks <b>${s.total}</b> curricula: <b>${s.Valid}</b> valid, <b>${s['Due for review']}</b> due for review (within ${d.lead} months), <b>${s.Expired}</b> expired, <b>${s['Pending approval']}</b> pending approval and <b>${s.Unverified}</b> unverified. <b>${s.gaps}</b> have documentation gaps requiring attention.</div>
-    <h2 style="margin:14px 0 8px;font-size:15px">Details (${d.rows.length} record${d.rows.length!==1?'s':''})</h2>
+    <h2 style="margin:14px 0 8px;font-size:18px">Details (${d.rows.length} record${d.rows.length!==1?'s':''})</h2>
     <div style="overflow:auto"><table class="tbl"><thead><tr><th>Programme</th><th>Department</th><th class="c">NTA</th><th>Valid Until</th><th class="c">Months</th><th>Status</th><th>Dev. stage</th><th>Docs</th><th>Implementation</th></tr></thead><tbody>${body}</tbody></table></div>
     <div class="note">Generated by the CBE Curriculum Tracking System. Source data: Curriculum Availability, Implementation and Validity Verification (Sept 2025).</div>
     </div></div></div>`;
   document.getElementById('reportOut').scrollIntoView({behavior:'smooth'});
 };
+
+/* ---------- departments ---------- */
+async function viewDepartments(m){
+  const rows=await api('GET','/departments'); state._depts=rows;
+  const total=rows.reduce((s,r)=>s+r.count,0);
+  m.innerHTML=`<h1 class="page">Departments</h1>
+    <p class="lead">Add a new department, rename an existing one, or remove a department that has no curricula. Renaming a department automatically updates every curriculum recorded under it, across all campuses.</p>
+    <div class="card">
+      <h2>Add a department</h2>
+      <div class="filters">
+        <div class="fld"><label>New department name</label><input type="text" id="d_new" placeholder="e.g. Tourism &amp; Hospitality Management"></div>
+        <div class="fld"><label>&nbsp;</label><button class="btn primary small" onclick="deptAdd()">Add department</button></div>
+      </div>
+    </div>
+    <div class="card" style="padding:0;overflow:auto">
+      <table class="tbl"><thead><tr><th>Department</th><th class="c">Curricula</th><th>Rename to…</th><th class="c no-print">Action</th></tr></thead>
+      <tbody>${rows.map((r,i)=>`<tr>
+        <td><b>${esc(r.name)}</b></td>
+        <td class="c">${r.count}</td>
+        <td><input type="text" id="d_re_${i}" value="${esc(r.name)}" style="min-width:220px"></td>
+        <td class="c no-print" style="white-space:nowrap">
+          <button class="btn ghost small" onclick="deptRename(${i})">Save name</button>
+          ${r.count===0?`<button class="btn small" style="background:#fdecef;color:#c0324a" onclick="deptRemove(${i})">Remove</button>`:`<span class="muted" title="A department in use cannot be removed">in use</span>`}
+        </td></tr>`).join('')}</tbody></table>
+    </div>
+    <div class="note">${rows.length} department${rows.length!==1?'s':''}, ${total} curriculum record${total!==1?'s':''} in total. Only a department with no curricula can be removed; otherwise rename it to keep the records attached.</div>`;
+}
+window.deptAdd=async()=>{ const n=val('d_new'); if(!n){ toast('Enter a department name'); return; } try{ const r=await api('POST','/lists/department',{name:n}); state.meta.lists=r.lists; toast('Department added'); renderApp(); }catch(e){ toast(e.message); } };
+window.deptRename=async(i)=>{ const from=state._depts[i].name; const to=val('d_re_'+i); if(!to){ toast('Enter a name'); return; } if(to===from){ toast('The name is unchanged'); return; } if(!confirm('Rename “'+from+'” to “'+to+'”?\nThis will update every curriculum recorded under this department.')) return; try{ const r=await api('POST','/lists/department/rename',{from,to}); state.meta.lists=r.lists; toast('Renamed'+(r.changed?(' — '+r.changed+' curricula updated'):'')); renderApp(); }catch(e){ toast(e.message); } };
+window.deptRemove=async(i)=>{ const name=state._depts[i].name; if(!confirm('Remove the department “'+name+'”?')) return; try{ const r=await api('POST','/lists/department/remove',{name}); state.meta.lists=r.lists; toast('Department removed'); renderApp(); }catch(e){ toast(e.message); } };
 
 /* ---------- settings ---------- */
 async function viewSettings(m){
@@ -669,7 +701,7 @@ async function viewSettings(m){
       </div>
       <div class="card"><h2>Departments &amp; campuses</h2>
         <div class="fld"><label>Departments</label><div>${lists.departments.map(d=>`<span class="pill b" style="margin:2px">${esc(d)}</span>`).join('')}</div></div>
-        <div class="filters" style="margin-bottom:6px"><div class="fld"><label>Add department</label><input type="text" id="s_dept"></div><div class="fld"><label>&nbsp;</label><button class="btn ghost small" onclick="addDept()">Add</button></div></div>
+        <div class="actions" style="margin:4px 0 10px"><button class="btn ghost small" onclick="go('departments')">Add or update departments →</button></div>
         <div class="fld"><label>Campuses</label><div>${lists.campuses.map(c=>`<span class="pill b" style="margin:2px">${esc(c)}</span>`).join('')}</div></div>
         <div class="filters"><div class="fld"><label>Add campus</label><input type="text" id="s_campus"></div><div class="fld"><label>&nbsp;</label><button class="btn ghost small" onclick="addCampus()">Add</button></div></div>
       </div>

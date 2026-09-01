@@ -289,7 +289,22 @@ app.post('/api/users', auth.requireAuth, auth.requireRole('admin'), (req, res) =
 app.post('/api/users/:id/active', auth.requireAuth, auth.requireRole('admin'), (req, res) => { repo.setUserActive(Number(req.params.id), req.body.active ? 1 : 0); res.json({ ok: true }); });
 
 app.get('/api/lists', auth.requireAuth, (req, res) => res.json(repo.lists()));
-app.post('/api/lists/department', auth.requireAuth, auth.requireRole(...SETTINGS_ROLES), (req, res) => { repo.addDepartment(req.body.name); res.json(repo.lists()); });
+app.get('/api/departments', auth.requireAuth, (req, res) => res.json(repo.departmentCounts()));
+app.post('/api/lists/department', auth.requireAuth, auth.requireRole(...SETTINGS_ROLES), (req, res) => {
+  const r = repo.addDepartment(req.body.name, req.user.email);
+  if (r && r.error) return res.status(400).json({ error: r.error });
+  res.json({ lists: repo.lists(), departments: repo.departmentCounts() });
+});
+app.post('/api/lists/department/rename', auth.requireAuth, auth.requireRole(...SETTINGS_ROLES), (req, res) => {
+  const r = repo.renameDepartment(req.body.from, req.body.to, req.user.email);
+  if (r && r.error) return res.status(400).json({ error: r.error });
+  res.json({ lists: repo.lists(), departments: repo.departmentCounts(), changed: r.changed });
+});
+app.post('/api/lists/department/remove', auth.requireAuth, auth.requireRole(...SETTINGS_ROLES), (req, res) => {
+  const r = repo.removeDepartment(req.body.name, req.user.email);
+  if (r && r.error) return res.status(400).json({ error: r.error });
+  res.json({ lists: repo.lists(), departments: repo.departmentCounts() });
+});
 app.post('/api/lists/campus', auth.requireAuth, auth.requireRole(...SETTINGS_ROLES), (req, res) => { repo.addCampus(req.body.name); res.json(repo.lists()); });
 
 app.get('/api/audit', auth.requireAuth, auth.requireRole('admin', 'director', 'qam'), (req, res) => res.json({ audit: repo.listAudit() }));
