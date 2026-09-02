@@ -4,7 +4,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const multer = require('multer');
 
-const { repo, audit, STAGES } = require('./src/store');
+const { repo, audit, STAGES, NEW_STAGES, REVIEW_STAGES, TRACKS } = require('./src/store');
 const auth = require('./src/auth');
 const S = require('./src/status');
 const notify = require('./src/notify');
@@ -115,7 +115,10 @@ app.get('/api/meta', auth.requireAuth, (req, res) => {
     maxUploadMb: MAX_UPLOAD_MB,
     ntaLevels: [4, 5, 6, 7, 8, 9],
     campuses: S.CAMPUSES,
-    stages: STAGES
+    stages: STAGES,
+    newStages: NEW_STAGES,
+    reviewStages: REVIEW_STAGES,
+    tracks: TRACKS
   });
 });
 
@@ -147,8 +150,11 @@ app.get('/api/dashboard', auth.requireAuth, (req, res) => {
   const timeline = Object.keys(years).sort().map(y => ({ year: y, n: years[y], past: parseInt(y) < parseInt(ref.slice(0, 4)) }));
   const programmes = new Set(rows.map(r => r.programme)).size;
   const departments = new Set(rows.map(r => r.department)).size;
-  const byStage = STAGES.map(s => ({ stage: s, n: rows.filter(r => (r.stage || 'Under development') === s).length }));
-  res.json({ ref, lead, campus: campus || 'All campuses', campusList: S.CAMPUSES, summary, alerts, status, byDept, timeline, byStage, programmes, departments });
+  // Two separate pipelines: new-programme development, and review / re-validation of existing curricula.
+  const byStageNew = NEW_STAGES.map(s => ({ stage: s, n: rows.filter(r => r.track === 'new' && r.stage === s).length }));
+  const byStageReview = REVIEW_STAGES.map(s => ({ stage: s, n: rows.filter(r => r.track === 'review' && r.stage === s).length }));
+  const trackCounts = { newProgrammes: rows.filter(r => r.track === 'new').length, underReview: rows.filter(r => r.track === 'review').length };
+  res.json({ ref, lead, campus: campus || 'All campuses', campusList: S.CAMPUSES, summary, alerts, status, byDept, timeline, byStageNew, byStageReview, trackCounts, programmes, departments });
 });
 
 // ---------------- curricula ----------------
@@ -183,6 +189,7 @@ app.put('/api/curricula/:id', auth.requireAuth, auth.requireRole(...EDIT_ROLES),
 app.put('/api/curricula/:id/review', auth.requireAuth, auth.requireRole(...EDIT_ROLES), (req, res) => {
   try {
     const fields = {};
+    if (req.body.track !== undefined) fields.track = req.body.track;
     if (req.body.stage !== undefined) fields.stage = req.body.stage;
     if (req.body.reviewer !== undefined) fields.reviewer = req.body.reviewer;
     if (req.body.review_started !== undefined) fields.review_started = req.body.review_started;
@@ -254,21 +261,20 @@ function reportRows(scope, dept, ref, lead, campus, stage) {
   if (scope === 'gaps') return rows.filter(r => r.docs === 'Incomplete');
   if (scope === 'recognition') return campus ? rows.filter(r => r.recognitionGap) : rows.filter(r => r.recognitionGapCount > 0);
   if (scope === 'dept') return rows.filter(r => r.department === dept);
-  if (scope === 'stage') return rows.filter(r => (r.stage || 'Under development') === stage);
+  if (scope === 'stage') return rows.filter(r => r.stage === stage);
   return rows;
 }
 app.get('/api/report', auth.requireAuth, (req, res) => {
   const ref = refOf(req), lead = leadOf(req), scope = req.query.scope || 'all', dept = req.query.dept || '', campus = campusOf(req), stage = req.query.stage || '';
   const summary = campus ? S.summariseCampus(repo.listCurricula(), campus, ref, lead) : S.summarise(repo.listCurricula(), ref, lead);
-  // Expired curricula split by whether a review / redevelopment initiative is already under way.
-  const activeStages = STAGES.filter(s => s !== 'Currently implemented');
+  // Expired curricula split by whether a review / re-validation initiative is already under way (track).
   const fullRows = campus ? repo.listCurricula().map(c => S.projectCampus(c, campus, ref, lead)).filter(r => r.offered)
                           : repo.listCurricula().map(c => S.enrich(c, ref, lead));
   const expiredRows = fullRows.filter(r => r.status === 'Expired');
   const expiredBreakdown = {
     total: expiredRows.length,
-    inReview: expiredRows.filter(r => activeStages.indexOf(r.stage) >= 0).length,
-    notStarted: expiredRows.filter(r => activeStages.indexOf(r.stage) < 0).length
+    inReview: expiredRows.filter(r => r.track && r.track !== 'stable').length,
+    notStarted: expiredRows.filter(r => !r.track || r.track === 'stable').length
   };
   res.json({ ref, lead, scope, dept, stage, campus: campus || 'All campuses', summary, expiredBreakdown, rows: reportRows(scope, dept, ref, lead, campus, stage) });
 });
