@@ -36,18 +36,29 @@ function parseNtaString(s) {
   return [...out].sort((a, b) => a - b);
 }
 // Curriculum development / validation lifecycle stages, in order.
+// Development / validation lifecycle for a NEW programme, in order. A programme moves
+// down this list until it is Currently implemented.
 const STAGES = [
-  'Pre-validation',
-  'Incorporation of validation committee comments',
+  'Under development',
+  'Undergoing validation',
+  'Incorporating NACTVET validation committee comments',
   'Post-validation',
-  'Validated – awaiting departmental recognition',
+  'Ready for implementation – awaiting departmental recognition',
   'Currently implemented'
 ];
+// Map the earlier stage names onto the current ones, so an existing database upgrades cleanly.
+const STAGE_MIGRATION = {
+  'Pre-validation': 'Under development',
+  'Incorporation of validation committee comments': 'Incorporating NACTVET validation committee comments',
+  'Post-validation': 'Post-validation',
+  'Validated – awaiting departmental recognition': 'Ready for implementation – awaiting departmental recognition',
+  'Currently implemented': 'Currently implemented'
+};
 function deriveStage(observed) {
   const o = String(observed || '');
   if (/implemented/i.test(o)) return 'Currently implemented';
-  if (/ready for implementation|awaiting/i.test(o)) return 'Validated – awaiting departmental recognition';
-  return 'Pre-validation';
+  if (/ready for implementation|awaiting/i.test(o)) return 'Ready for implementation – awaiting departmental recognition';
+  return 'Under development';
 }
 // A blank per-campus record = not offered at that campus.
 function emptyCampus() { return { offered: false, recognition: 'Missing', stamped: 'Missing', observed: 'Not offered' }; }
@@ -66,6 +77,13 @@ function load() {
     let _deptAdded = false;
     DEFAULT_DEPARTMENTS.forEach(d => { if (!data.lists.departments.some(x => String(x).toLowerCase() === d.toLowerCase())) { data.lists.departments.push(d); _deptAdded = true; } });
     if (_deptAdded) data.lists.departments.sort((a, b) => a.localeCompare(b));
+    // Upgrade any earlier development-stage names to the current lifecycle labels.
+    let _stageChanged = false;
+    (data.curricula || []).forEach(c => {
+      if (STAGE_MIGRATION[c.stage] && STAGE_MIGRATION[c.stage] !== c.stage) { c.stage = STAGE_MIGRATION[c.stage]; _stageChanged = true; }
+      else if (c.stage && !STAGES.includes(c.stage)) { c.stage = deriveStage(c.observed); _stageChanged = true; }
+    });
+    if (_stageChanged) save();
     if (!data.settings) data.settings = { ...DEFAULT_SETTINGS };
     if (!data.notifications) data.notifications = [];
     ensureCoreUsers();
