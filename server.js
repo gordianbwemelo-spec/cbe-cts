@@ -147,7 +147,7 @@ app.get('/api/dashboard', auth.requireAuth, (req, res) => {
   const timeline = Object.keys(years).sort().map(y => ({ year: y, n: years[y], past: parseInt(y) < parseInt(ref.slice(0, 4)) }));
   const programmes = new Set(rows.map(r => r.programme)).size;
   const departments = new Set(rows.map(r => r.department)).size;
-  const byStage = STAGES.map(s => ({ stage: s, n: rows.filter(r => (r.stage || 'Pre-validation') === s).length }));
+  const byStage = STAGES.map(s => ({ stage: s, n: rows.filter(r => (r.stage || 'Under development') === s).length }));
   res.json({ ref, lead, campus: campus || 'All campuses', campusList: S.CAMPUSES, summary, alerts, status, byDept, timeline, byStage, programmes, departments });
 });
 
@@ -254,7 +254,7 @@ function reportRows(scope, dept, ref, lead, campus, stage) {
   if (scope === 'gaps') return rows.filter(r => r.docs === 'Incomplete');
   if (scope === 'recognition') return campus ? rows.filter(r => r.recognitionGap) : rows.filter(r => r.recognitionGapCount > 0);
   if (scope === 'dept') return rows.filter(r => r.department === dept);
-  if (scope === 'stage') return rows.filter(r => (r.stage || 'Pre-validation') === stage);
+  if (scope === 'stage') return rows.filter(r => (r.stage || 'Under development') === stage);
   return rows;
 }
 app.get('/api/report', auth.requireAuth, (req, res) => {
