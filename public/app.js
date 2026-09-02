@@ -26,13 +26,12 @@ const ST_CLASS={ 'Valid':'st-valid','Due for review':'st-due','Expired':'st-expi
 const ST_COLOR={ 'Valid':'#1f9d63','Due for review':'#e0a106','Expired':'#d1495b','Pending approval':'#0aa0e0','Unverified':'#e08a4a' };
 function stPill(s){ return `<span class="pill ${ST_CLASS[s]||'b'}">${esc(s)}</span>`; }
 const STAGE_COLOR={
-  'Under development':'#8a3ff0',
-  'Undergoing validation':'#6366f1',
+  'Pre-validation':'#8a3ff0',
   'Incorporating NACTVET validation committee comments':'#0aa0e0',
   'Post-validation':'#e0a106',
-  'Ready for implementation – awaiting departmental recognition':'#e08a4a',
-  'Currently implemented':'#1f9d63'
+  'Ready for implementation – awaiting departmental recognition':'#e08a4a'
 };
+const TRACK_LABEL={ stable:'Established (implemented)', 'new':'New programme (in development)', review:'Under review / re-validation' };
 function stageLabelShort(s){
   if(s==='Incorporating NACTVET validation committee comments') return 'NACTVET committee comments';
   if(s==='Ready for implementation – awaiting departmental recognition') return 'Awaiting dept. recognition';
@@ -40,10 +39,24 @@ function stageLabelShort(s){
 }
 // Stages that mean a development / validation initiative is ALREADY under way (i.e. not yet implemented).
 // An expired curriculum at one of these stages is being addressed; only an expired
-// curriculum NOT at one of these (e.g. still "Currently implemented") needs a review started.
-const ACTIVE_REVIEW_STAGES=['Under development','Undergoing validation','Incorporating NACTVET validation committee comments','Post-validation','Ready for implementation – awaiting departmental recognition'];
-function reviewUnderway(stage){ return ACTIVE_REVIEW_STAGES.indexOf(stage)>=0; }
-function stagePill(s){ const c=STAGE_COLOR[s]||'#657685'; return `<span class="pill" style="background:${c}22;color:${c};border:1px solid ${c}55" title="${esc(s||'')}">${esc(stageLabelShort(s||'Under development'))}</span>`; }
+// A curriculum is "under way" (development or review) when its track is not 'stable'.
+// An expired curriculum on a 'stable' track has no review started yet.
+function reviewUnderway(r){ return !!(r && r.track && r.track!=='stable'); }
+function stagePill(s){ if(!s) return `<span class="pill b">Not under review</span>`; const c=STAGE_COLOR[s]||'#657685'; return `<span class="pill" style="background:${c}22;color:${c};border:1px solid ${c}55" title="${esc(s||'')}">${esc(stageLabelShort(s))}</span>`; }
+function trackBadge(t){ const map={ 'new':'#0b6aa8', review:'#946a06', stable:'#657685' }; const c=map[t]||'#657685'; return `<span class="pill" style="background:${c}18;color:${c};border:1px solid ${c}55">${esc(TRACK_LABEL[t]||t||'—')}</span>`; }
+function stageOptionsFor(track,sel){ const list = track==='new' ? (state.meta.newStages||[]) : track==='review' ? (state.meta.reviewStages||[]) : []; return list.map(s=>`<option ${sel===s?'selected':''}>${esc(s)}</option>`).join(''); }
+function trackStageControls(p, track, stage){
+  track = track||'stable';
+  const tOpt=[['stable',TRACK_LABEL.stable],['new',TRACK_LABEL['new']],['review',TRACK_LABEL.review]].map(([v,l])=>`<option value="${v}" ${track===v?'selected':''}>${esc(l)}</option>`).join('');
+  return `<div class="fld"><label>Programme track</label><select id="${p}_track" onchange="onTrackChange('${p}')">${tOpt}</select></div>
+    <div class="fld" id="${p}_stagewrap" style="${track==='stable'?'display:none':''}"><label>Development / validation stage</label><select id="${p}_stage">${stageOptionsFor(track,stage)}</select></div>`;
+}
+window.onTrackChange=(p)=>{
+  const t=document.getElementById(p+'_track').value;
+  const wrap=document.getElementById(p+'_stagewrap'); const sel=document.getElementById(p+'_stage');
+  if(t==='stable'){ if(wrap) wrap.style.display='none'; if(sel) sel.innerHTML=''; }
+  else { if(wrap) wrap.style.display=''; if(sel) sel.innerHTML=stageOptionsFor(t,''); }
+};
 function speak(text){
   if(!('speechSynthesis' in window)){ toast('Voice not supported in this browser'); return; }
   const u=new SpeechSynthesisUtterance(text); u.rate=0.98; speechSynthesis.speak(u);
@@ -141,7 +154,7 @@ async function afterLogin(){
 /* ---------- shell ---------- */
 const ROLE_LABEL={ management:'Management', director:'Director of Academics', qam:'Quality Assurance Manager', coordinator:'Curriculum Coordinator', admin:'Administrator' };
 function navItems(){
-  const m=state.meta, items=[['dashboard','▤','Dashboard'],['exec','★','Executive Summary'],['register','▦','Curriculum Register'],['newprog','⚑','New Programmes']];
+  const m=state.meta, items=[['dashboard','▤','Dashboard'],['exec','★','Executive Summary'],['register','▦','Curriculum Register'],['newprog','⚑','New Programmes'],['underreview','⟳','Under Review']];
   if(m.canEdit) items.push(['entry','＋','Add / Update']);
   if(m.canEdit) items.push(['notify','🔔','Notifications']);
   items.push(['reports','▣','Reports']);
@@ -171,6 +184,7 @@ async function route(){
     if(state.view==='exec') return viewExec(m);
     if(state.view==='register') return viewRegister(m);
     if(state.view==='newprog') return viewNewProgrammes(m);
+    if(state.view==='underreview') return viewUnderReview(m);
     if(state.view==='entry') return viewEntry(m);
     if(state.view==='detail') return viewDetail(m);
     if(state.view==='notify') return viewNotify(m);
@@ -218,7 +232,9 @@ async function viewDashboard(m){
       <div class="card"><h2>Curricula requiring action</h2><div class="sub">Expired, entering the review window, or implemented without valid documents — most urgent first.</div>${alerts}</div>
       <div class="card"><h2>Status distribution</h2><div class="sub">All records</div><div id="donut"></div></div>
     </div>
-    <div class="card"><h2>Development &amp; validation pipeline</h2><div class="sub">Where curricula sit in the development / validation lifecycle</div>${stagePipeline(d.byStage||[])}</div>
+    <div class="card"><h2>Development &amp; review pipelines</h2><div class="sub">New programmes being developed, and existing curricula being reviewed — kept separate</div>
+      <h3 style="margin:8px 0 6px;font-size:13px;color:var(--navy)">New programme development <span class="muted">(${(d.trackCounts&&d.trackCounts.newProgrammes)||0})</span></h3>${stagePipeline(d.byStageNew||[])}
+      <h3 style="margin:16px 0 6px;font-size:13px;color:var(--navy)">Existing curricula under review / re-validation <span class="muted">(${(d.trackCounts&&d.trackCounts.underReview)||0})</span></h3>${stagePipeline(d.byStageReview||[])}</div>
     <div class="grid-eq">
       <div class="card"><h2>Status by department</h2><div class="sub">Stacked count per department</div>${deptChart(d.byDept,d.status)}</div>
       <div class="card"><h2>Expiry timeline</h2><div class="sub">When dated curricula reach end of validity</div>${timelineChart(d.timeline,d.ref)}</div>
@@ -232,8 +248,8 @@ function execNarrative(d){
   const b = x => `<b>${x}</b>`;
   // Split expired curricula into those already under review and those with no review started.
   const expired = d.alerts.filter(a=>a.status==='Expired');
-  const notStarted = expired.filter(a=>!reviewUnderway(a.stage));
-  const inReview = expired.filter(a=>reviewUnderway(a.stage));
+  const notStarted = expired.filter(a=>!reviewUnderway(a));
+  const inReview = expired.filter(a=>reviewUnderway(a));
   const parts=[];
   const campusClause = campusScope ? '' : ` in ${b((d.campusList||[]).length)} campuses`;
   parts.push(`As at ${b(ref)}, ${scope} is tracking ${b(s.total)} curricul${s.total===1?'um':'a'} across ${b(d.programmes)} programme${d.programmes!==1?'s':''} and ${b(d.departments)} department${d.departments!==1?'s':''}${campusClause}.`);
@@ -265,7 +281,7 @@ function execNarrative(d){
     parts.push(`${b('Most urgent:')} ${b(notStarted.length)} expired ${one?'curriculum has':'curricula have'} no review under way and ${one?'requires':'require'} a review to be initiated immediately${top.length?`, including ${top.join(', ')}`:''}.`);
   }
   if(inReview.length){
-    const grp={}; inReview.forEach(a=>{ const st=a.stage||'Under development'; grp[st]=(grp[st]||0)+1; });
+    const grp={}; inReview.forEach(a=>{ const st=a.stage||'(stage not set)'; grp[st]=(grp[st]||0)+1; });
     const segs=Object.keys(grp).map(st=>`${grp[st]} at ${st.toLowerCase()}`);
     const one = inReview.length===1;
     parts.push(`A further ${b(inReview.length)} expired ${one?'curriculum is':'curricula are'} already under review (${segs.join('; ')}) and ${one?'is':'are'} being addressed — ${one?'it does':'they do'} not need a fresh review to be started.`);
@@ -299,8 +315,8 @@ async function viewExec(m){
   try{ const g=await api('GET','/report'+qref()+'&scope=recognition'); recog=g.rows||[]; }catch(e){}
   const s=d.summary;
   const expired=d.alerts.filter(a=>a.status==='Expired');
-  const expiredNotStarted=expired.filter(a=>!reviewUnderway(a.stage));
-  const expiredInReview=expired.filter(a=>reviewUnderway(a.stage));
+  const expiredNotStarted=expired.filter(a=>!reviewUnderway(a));
+  const expiredInReview=expired.filter(a=>reviewUnderway(a));
   const due=d.alerts.filter(a=>a.status==='Due for review');
   const priorities=[];
   if(expiredNotStarted.length) priorities.push(`Initiate a curriculum review immediately for the <b>${expiredNotStarted.length}</b> expired ${expiredNotStarted.length===1?'curriculum':'curricula'} with no review under way.`);
@@ -400,7 +416,7 @@ function renderRows(){
   if(f.q) rows=rows.filter(r=>r.programme.toLowerCase().includes(f.q.toLowerCase()));
   if(f.dept) rows=rows.filter(r=>r.department===f.dept);
   if(f.status) rows=rows.filter(r=>r.status===f.status);
-  if(f.stage) rows=rows.filter(r=>(r.stage||'Under development')===f.stage);
+  if(f.stage) rows=rows.filter(r=>r.stage===f.stage);
   if(f.nta) rows=rows.filter(r=>r.nta===parseInt(f.nta));
   rows.sort((a,b)=> a.programme.localeCompare(b.programme) || ((a.nta||0)-(b.nta||0)) );
   const cols=perCampus?12:10;
@@ -433,34 +449,45 @@ window.openDetail=(id)=>{ state.editId=id; state.view='detail'; renderApp(); };
 
 /* ---------- detail ---------- */
 /* ---------- new programmes (development / validation pipeline) ---------- */
-async function viewNewProgrammes(m){
-  const d=await api('GET','/curricula?ref='+state.ref+'&lead='+state.lead); // national view
-  const all=d.curricula||[];
-  const pipeline=(state.meta.stages||[]).filter(s=>s!=='Currently implemented');
-  const inPipe=all.filter(c=>c.stage && c.stage!=='Currently implemented');
-  const total=inPipe.length;
-  const sections=pipeline.map((st,i)=>{
-    const rows=inPipe.filter(c=>c.stage===st).sort((a,b)=>a.programme.localeCompare(b.programme)||((a.nta||0)-(b.nta||0)));
-    const head=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h2 style="flex:1;min-width:160px">${i+1}. ${esc(st)}</h2>${stagePill(st)}<span class="pill b">${rows.length}</span></div>`;
-    if(!rows.length) return `<div class="card">${head}<div class="note" style="margin:0">No programmes at this stage.</div></div>`;
-    const body=rows.map(c=>{
-      const rec=(c.recognitionGaps&&c.recognitionGaps.length)?`<span class="pill docs-bad" title="Awaiting departmental recognition at: ${esc(c.recognitionGaps.join(', '))}">awaiting recognition: ${c.recognitionGaps.map(esc).join(', ')}</span>`:'';
+function pipelineSections(rows,stages,badgeKind){
+  return stages.map((st,i)=>{
+    const r=rows.filter(c=>c.stage===st).sort((a,b)=>a.programme.localeCompare(b.programme)||((a.nta||0)-(b.nta||0)));
+    const head=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h2 style="flex:1;min-width:160px">${i+1}. ${esc(st)}</h2>${stagePill(st)}<span class="pill b">${r.length}</span></div>`;
+    if(!r.length) return `<div class="card">${head}<div class="note" style="margin:0">No programmes at this stage.</div></div>`;
+    const body=r.map(c=>{
+      const badge = badgeKind==='validity'
+        ? stPill(c.status)
+        : ((c.recognitionGaps&&c.recognitionGaps.length)?`<span class="pill docs-bad" title="Awaiting departmental recognition at: ${esc(c.recognitionGaps.join(', '))}">awaiting recognition: ${c.recognitionGaps.map(esc).join(', ')}</span>`:'');
       return `<tr>
-        <td><b>${esc(c.programme)}</b> ${rec}</td>
+        <td><b>${esc(c.programme)}</b> ${badge}</td>
         <td class="c">${esc(c.levels||c.nta||'')}</td>
         <td>${esc(c.department)}</td>
         <td>${esc(c.reviewer||'—')}</td>
         <td>${c.review_started?fmtDate(c.review_started):'—'}</td>
-        <td class="c no-print"><button class="btn small ghost" onclick="openDetail(${c.id})">Open</button></td>
-      </tr>`;
+        <td class="c no-print"><button class="btn small ghost" onclick="openDetail(${c.id})">Open</button></td></tr>`;
     }).join('');
     return `<div class="card">${head}
       <table class="tbl"><thead><tr><th>Programme</th><th class="c">NTA</th><th>Department</th><th>Responsible officer / committee</th><th>Since</th><th class="c no-print">Open</th></tr></thead><tbody>${body}</tbody></table></div>`;
   }).join('');
-  m.innerHTML=`<h1 class="page">New Programmes — Development &amp; Validation</h1>
-    <p class="lead">Programmes not yet implemented, grouped by the stage they have reached: under development, undergoing validation, incorporating NACTVET's validation committee comments, post-validation, and ready for implementation awaiting departmental recognition. <b>${total}</b> programme record${total!==1?'s':''} ${total===1?'is':'are'} in the pipeline.</p>
-    <div class="card no-print" style="border-left:4px solid var(--blue)"><div class="sub" style="margin:0">To move a programme forward, open it and change its <b>Development / validation stage</b>. Once it is implemented, it leaves this list and appears in the Curriculum Register. New programmes are added from <b>Add / Update</b>.</div></div>
-    ${total?sections:'<div class="card"><div class="note" style="margin:0">There are no new programmes in the development or validation pipeline right now. Every curriculum is either currently implemented or has not had its stage set.</div></div>'}`;
+}
+async function viewNewProgrammes(m){
+  const d=await api('GET','/curricula?ref='+state.ref+'&lead='+state.lead);
+  const rows=(d.curricula||[]).filter(c=>c.track==='new');
+  const stages=state.meta.newStages||[];
+  m.innerHTML=`<h1 class="page">New Programmes — Development</h1>
+    <p class="lead">Brand-new programmes not yet implemented, grouped by development stage: pre-validation, incorporating NACTVET's validation committee comments, post-validation, and ready for implementation awaiting departmental recognition. Once departmental recognition is granted, the programme is marked as implemented and moves to the Curriculum Register. <b>${rows.length}</b> in development.</p>
+    <div class="card no-print" style="border-left:4px solid var(--blue)"><div class="sub" style="margin:0">Add a new programme from <b>Add / Update</b> and set its track to <b>New programme</b>. Move it forward by opening it and changing its stage.</div></div>
+    ${rows.length?pipelineSections(rows,stages,'recognition'):'<div class="card"><div class="note" style="margin:0">No new programmes are in development right now.</div></div>'}`;
+}
+async function viewUnderReview(m){
+  const d=await api('GET','/curricula?ref='+state.ref+'&lead='+state.lead);
+  const rows=(d.curricula||[]).filter(c=>c.track==='review');
+  const stages=state.meta.reviewStages||[];
+  const expired=rows.filter(c=>c.status==='Expired').length;
+  m.innerHTML=`<h1 class="page">Curricula Under Review</h1>
+    <p class="lead">Existing programmes being reviewed / re-validated, grouped by stage: pre-validation, incorporating committee comments, and post-validation. These do <b>not</b> need departmental recognition. The badge on each shows whether it has already <b>expired</b> or is still <b>valid</b> but under early review. <b>${rows.length}</b> under review${expired?`, of which <b>${expired}</b> ${expired===1?'has':'have'} expired`:''}.</p>
+    <div class="card no-print" style="border-left:4px solid var(--warn)"><div class="sub" style="margin:0">To track an existing curriculum here — whether expired or not — open it, set its track to <b>Under review</b>, and choose the stage. When the review is complete, set the track back to <b>Established</b> and record the new validity date.</div></div>
+    ${rows.length?pipelineSections(rows,stages,'validity'):'<div class="card"><div class="note" style="margin:0">No curricula are currently marked as under review. Open any curriculum (expired or valid) and set its track to “Under review” to start tracking it here.</div></div>'}`;
 }
 async function viewDetail(m){
   const d=await api('GET','/curricula/'+state.editId+qref());
@@ -521,13 +548,13 @@ async function viewDetail(m){
           <tr><th>Recommended action</th><td>${esc(r.action)}</td></tr>
           <tr><th>Last updated</th><td>${esc(r.updated_by)} · ${esc(r.updated_at)}</td></tr>
         </table></div>
-      <div class="card"><h2>Development &amp; validation stage</h2><div class="sub">Where this curriculum sits in the development / validation lifecycle (national).</div>
-        <div style="margin-bottom:10px">${stagePill(r.stage)}</div>
-        ${canEdit?`<div class="fld"><label>Development stage</label><select id="rv_stage">${stages.map(s=>`<option ${r.stage===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
-        <div class="fld"><label>Responsible officer / committee</label><input type="text" id="rv_by" value="${esc(r.reviewer||'')}" placeholder="e.g. Curriculum Validation Committee"></div>
+      <div class="card"><h2>Track &amp; development / validation stage</h2><div class="sub">Is this an established programme, a new programme in development, or an existing one under review? New programmes need departmental recognition; reviews do not.</div>
+        <div style="margin-bottom:10px">${trackBadge(r.track)} ${r.track&&r.track!=='stable'?stagePill(r.stage):''}</div>
+        ${canEdit?`${trackStageControls('rv', r.track, r.stage)}
+        <div class="fld"><label>Responsible officer / committee</label><input type="text" id="rv_by" value="${esc(r.reviewer||'')}" placeholder="e.g. NACTVET Validation Committee"></div>
         <div class="fld"><label>Date entered this stage</label><input type="date" id="rv_date" value="${esc(r.review_started||'')}"></div>
-        <button class="btn primary small" onclick="saveReview(${r.id})">Save stage</button>`
-        :`<p>Responsible: ${esc(r.reviewer)||'—'}<br>Since: ${fmtDate(r.review_started)}</p>`}
+        <button class="btn primary small" onclick="saveReview(${r.id})">Save track &amp; stage</button>`
+        :`<p>${esc(TRACK_LABEL[r.track]||'—')}${r.track&&r.track!=='stable'?' · '+esc(r.stage):''}<br>Responsible: ${esc(r.reviewer)||'—'}<br>Since: ${fmtDate(r.review_started)}</p>`}
         <hr style="border:none;border-top:1px solid var(--line);margin:16px 0">
         <h2 style="font-size:18px">Document library</h2><div class="sub">Approval/validation letters, the full curriculum document, stamped copies, review reports and more. Any signed-in user can download; editing roles can add or remove. Up to ${state.meta.maxUploadMb} MB per file.</div>
         ${docLibrary(r,canEdit)}
@@ -549,7 +576,10 @@ function docLibrary(r,canEdit){
   return list + uploader;
 }
 window.saveReview=async(id)=>{
-  try{ await api('PUT','/curricula/'+id+'/review',{stage:document.getElementById('rv_stage').value,reviewer:document.getElementById('rv_by').value,review_started:document.getElementById('rv_date').value}); toast('Development stage saved'); renderApp(); }
+  const track=document.getElementById('rv_track').value;
+  const stageEl=document.getElementById('rv_stage');
+  const stage= track==='stable' ? '' : (stageEl?stageEl.value:'');
+  try{ await api('PUT','/curricula/'+id+'/review',{track,stage,reviewer:document.getElementById('rv_by').value,review_started:document.getElementById('rv_date').value}); toast('Track & stage saved'); renderApp(); }
   catch(e){ toast(e.message); }
 };
 window.uploadDoc=(id)=>{
@@ -608,7 +638,7 @@ window.deleteCur=async(id,name)=>{
 
 /* ---------- entry (add/edit) ---------- */
 async function viewEntry(m){
-  let r={programme:'',department:state.meta.lists.departments[0]||'',levels:'',validation:'Available',valid_until:'',observed:'',notes:'',campuses:{}};
+  let r={programme:'',department:state.meta.lists.departments[0]||'',levels:'',validation:'Available',valid_until:'',observed:'',notes:'',track:'stable',stage:'',campuses:{}};
   if(state.editId){ const d=await api('GET','/curricula/'+state.editId+qref()); r=d.curriculum; }
   const opt=(arr,v)=>arr.map(x=>`<option ${v===x?'selected':''}>${esc(x)}</option>`).join('');
   const camps=state.meta.campuses||['Dar es Salaam','Dodoma','Mbeya','Mwanza'];
@@ -635,7 +665,7 @@ async function viewEntry(m){
         <div class="note" style="margin:2px 0 0">Tick each level — <b>one record is created per level</b>; the per-campus settings below apply to each.</div></div>`}
       <div class="fld"><label>Validation / approval letter (national)</label><select id="e_validation">${opt(['Available','Missing','Partial'],r.validation)}</select></div>
     </div><div class="row">
-      <div class="fld"><label>Development / validation stage</label><select id="e_stage">${(state.meta.stages||[]).map(s=>`<option ${r.stage===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
+      ${trackStageControls('e', r.track, r.stage)}
       <div class="fld"><label>Curriculum valid until (date)</label><input type="date" id="e_valid" value="${esc(r.valid_until)}"></div>
       <div class="fld"><label>Curriculum status note</label><input type="text" id="e_observed" value="${esc(r.observed)}" placeholder="e.g. Currently implemented / Ready for implementation"></div>
     </div>
@@ -656,8 +686,11 @@ function collectCampuses(){
   return campuses;
 }
 window.saveCur=async()=>{
+  const track=val('e_track')||'stable';
+  const stageEl=document.getElementById('e_stage');
+  const stage= track==='stable' ? '' : (stageEl?stageEl.value:'');
   const body={ programme:val('e_programme'),department:val('e_department'),
-    validation:val('e_validation'),stage:val('e_stage'),valid_until:val('e_valid'),observed:val('e_observed'),notes:val('e_notes'), campuses:collectCampuses() };
+    validation:val('e_validation'),track,stage,valid_until:val('e_valid'),observed:val('e_observed'),notes:val('e_notes'), campuses:collectCampuses() };
   if(!body.programme){ toast('Programme name is required'); return; }
   try{
     if(state.editId){
@@ -753,7 +786,7 @@ window.buildReport=async()=>{
   const {scope,dept,stage}=scopeParams();
   const d=await api('GET','/report'+qref()+'&scope='+encodeURIComponent(scope)+'&dept='+encodeURIComponent(dept)+'&stage='+encodeURIComponent(stage));
   const s=d.summary; const eb=d.expiredBreakdown||{total:s.Expired||0,inReview:0,notStarted:s.Expired||0}; const nb=(x,w)=>x>0?`<b>${x}</b> ${w}`:`no ${w}`; const labels={all:'Full status report',action:'Curricula requiring action',expired:'Expired curricula',due:'Curricula due for review',gaps:'Documentation gaps',recognition:'Recognition gaps (offered, not recognised)',dept:'Department: '+dept,stage:'Development / validation stage: '+stage};
-  const body=d.rows.map(r=>`<tr><td>${esc(r.programme)}</td><td>${esc(r.department)}</td><td class="c">${esc(r.levels)}</td><td>${fmtDate(r.valid_until)}</td><td class="c">${r.months_left==null?'—':Math.round(r.months_left)}</td><td>${esc(r.status)}</td><td>${esc(stageLabelShort(r.stage||'Under development'))}</td><td>${esc(r.docs)}</td><td>${esc(state.campus?(r.campusObserved||''):(r.observed||''))}</td></tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:#657685">No records for this scope.</td></tr>';
+  const body=d.rows.map(r=>`<tr><td>${esc(r.programme)}</td><td>${esc(r.department)}</td><td class="c">${esc(r.levels)}</td><td>${fmtDate(r.valid_until)}</td><td class="c">${r.months_left==null?'—':Math.round(r.months_left)}</td><td>${esc(r.status)}</td><td>${esc(r.stage?stageLabelShort(r.stage):'—')}</td><td>${esc(r.docs)}</td><td>${esc(state.campus?(r.campusObserved||''):(r.observed||''))}</td></tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:#657685">No records for this scope.</td></tr>';
   document.getElementById('reportOut').innerHTML=`<div class="card"><div class="official"><div class="oh"><img src="/assets/arms.png"><div class="c"><div class="l1">THE UNITED REPUBLIC OF TANZANIA</div><div class="l2">COLLEGE OF BUSINESS EDUCATION</div><div class="l3">Curriculum Development, Review &amp; Implementation — Status Report</div></div><img src="/assets/be.png"></div>
     <div class="ob"><div class="otitle">${esc(labels[scope])}</div>
     <table class="tbl"><tr><th style="width:170px">Generated</th><td>${fmtDate(d.ref)}</td></tr><tr><th>Prepared by</th><td>${esc(state.user.name)} (${ROLE_LABEL[state.user.role]})</td></tr><tr><th>Review lead time</th><td>${d.lead} months before expiry</td></tr></table>
