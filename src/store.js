@@ -88,17 +88,21 @@ function load() {
     let _deptAdded = false;
     DEFAULT_DEPARTMENTS.forEach(d => { if (!data.lists.departments.some(x => String(x).toLowerCase() === d.toLowerCase())) { data.lists.departments.push(d); _deptAdded = true; } });
     if (_deptAdded) data.lists.departments.sort((a, b) => a.localeCompare(b));
-    // Upgrade records to the {track, stage} model (separating new-programme development from review).
+    // Upgrade records to the {track, stage} model. Derive the track from the OBSERVED status so an
+    // implemented curriculum is 'stable' (established) regardless of any stale stage value it carried.
+    // A one-time correction (stageModelV=2) re-derives records that an earlier pass mis-classified.
     let _stageChanged = false;
+    const _needV2 = data.stageModelV !== 2;
     (data.curricula || []).forEach(c => {
-      if (!c.track) {
-        const m = LEGACY_TRACK_STAGE[c.stage] || (c.stage ? ['new', c.stage] : ['stable', '']);
-        c.track = m[0]; c.stage = m[1]; _stageChanged = true;
+      if (!c.track || _needV2) {
+        const ts = deriveTrackStage(c.observed);
+        c.track = ts.track; c.stage = ts.stage; _stageChanged = true;
       }
       if (!TRACKS.includes(c.track)) { c.track = 'stable'; _stageChanged = true; }
       if (c.track === 'stable' && c.stage) { c.stage = ''; _stageChanged = true; }
       if (c.track !== 'stable' && !stagesForTrack(c.track).includes(c.stage)) { c.stage = stagesForTrack(c.track)[0]; _stageChanged = true; }
     });
+    if (_needV2) { data.stageModelV = 2; _stageChanged = true; }
     if (_stageChanged) save();
     if (!data.settings) data.settings = { ...DEFAULT_SETTINGS };
     if (!data.notifications) data.notifications = [];
