@@ -36,29 +36,40 @@ function parseNtaString(s) {
   return [...out].sort((a, b) => a - b);
 }
 // Curriculum development / validation lifecycle stages, in order.
-// Development / validation lifecycle for a NEW programme, in order. A programme moves
-// down this list until it is Currently implemented.
-const STAGES = [
-  'Under development',
-  'Undergoing validation',
+// Two SEPARATE pipelines:
+//  • NEW programme development — ends with departmental recognition, then implementation.
+//  • REVIEW / re-validation of an EXISTING programme — no departmental recognition needed;
+//    applies whether the curriculum has expired or is still valid but being reviewed.
+const REVIEW_STAGES = [
+  'Pre-validation',
   'Incorporating NACTVET validation committee comments',
-  'Post-validation',
-  'Ready for implementation – awaiting departmental recognition',
-  'Currently implemented'
+  'Post-validation'
 ];
-// Map the earlier stage names onto the current ones, so an existing database upgrades cleanly.
-const STAGE_MIGRATION = {
-  'Pre-validation': 'Under development',
-  'Incorporation of validation committee comments': 'Incorporating NACTVET validation committee comments',
-  'Post-validation': 'Post-validation',
-  'Validated – awaiting departmental recognition': 'Ready for implementation – awaiting departmental recognition',
-  'Currently implemented': 'Currently implemented'
+const NEW_STAGES = REVIEW_STAGES.concat(['Ready for implementation – awaiting departmental recognition']);
+const STAGES = NEW_STAGES.slice(); // widest set, for generic validation
+// A curriculum is on exactly one track:
+//   'stable' = established / implemented, not currently under development or review
+//   'new'    = a new programme being developed (uses NEW_STAGES; needs departmental recognition)
+//   'review' = an existing programme under review / re-validation (uses REVIEW_STAGES; no recognition)
+const TRACKS = ['stable', 'new', 'review'];
+function stagesForTrack(track) { return track === 'new' ? NEW_STAGES : (track === 'review' ? REVIEW_STAGES : []); }
+// Map any earlier single 'stage' value onto the new {track, stage} model.
+const LEGACY_TRACK_STAGE = {
+  'Currently implemented': ['stable', ''],
+  'Under development': ['new', 'Pre-validation'],
+  'Undergoing validation': ['new', 'Pre-validation'],
+  'Pre-validation': ['new', 'Pre-validation'],
+  'Incorporating NACTVET validation committee comments': ['new', 'Incorporating NACTVET validation committee comments'],
+  'Incorporation of validation committee comments': ['new', 'Incorporating NACTVET validation committee comments'],
+  'Post-validation': ['new', 'Post-validation'],
+  'Ready for implementation – awaiting departmental recognition': ['new', 'Ready for implementation – awaiting departmental recognition'],
+  'Validated – awaiting departmental recognition': ['new', 'Ready for implementation – awaiting departmental recognition']
 };
-function deriveStage(observed) {
+function deriveTrackStage(observed) {
   const o = String(observed || '');
-  if (/implemented/i.test(o)) return 'Currently implemented';
-  if (/ready for implementation|awaiting/i.test(o)) return 'Ready for implementation – awaiting departmental recognition';
-  return 'Under development';
+  if (/implemented/i.test(o)) return { track: 'stable', stage: '' };
+  if (/ready for implementation|awaiting/i.test(o)) return { track: 'new', stage: 'Ready for implementation – awaiting departmental recognition' };
+  return { track: 'new', stage: 'Pre-validation' };
 }
 // A blank per-campus record = not offered at that campus.
 function emptyCampus() { return { offered: false, recognition: 'Missing', stamped: 'Missing', observed: 'Not offered' }; }
@@ -77,11 +88,16 @@ function load() {
     let _deptAdded = false;
     DEFAULT_DEPARTMENTS.forEach(d => { if (!data.lists.departments.some(x => String(x).toLowerCase() === d.toLowerCase())) { data.lists.departments.push(d); _deptAdded = true; } });
     if (_deptAdded) data.lists.departments.sort((a, b) => a.localeCompare(b));
-    // Upgrade any earlier development-stage names to the current lifecycle labels.
+    // Upgrade records to the {track, stage} model (separating new-programme development from review).
     let _stageChanged = false;
     (data.curricula || []).forEach(c => {
-      if (STAGE_MIGRATION[c.stage] && STAGE_MIGRATION[c.stage] !== c.stage) { c.stage = STAGE_MIGRATION[c.stage]; _stageChanged = true; }
-      else if (c.stage && !STAGES.includes(c.stage)) { c.stage = deriveStage(c.observed); _stageChanged = true; }
+      if (!c.track) {
+        const m = LEGACY_TRACK_STAGE[c.stage] || (c.stage ? ['new', c.stage] : ['stable', '']);
+        c.track = m[0]; c.stage = m[1]; _stageChanged = true;
+      }
+      if (!TRACKS.includes(c.track)) { c.track = 'stable'; _stageChanged = true; }
+      if (c.track === 'stable' && c.stage) { c.stage = ''; _stageChanged = true; }
+      if (c.track !== 'stable' && !stagesForTrack(c.track).includes(c.stage)) { c.stage = stagesForTrack(c.track)[0]; _stageChanged = true; }
     });
     if (_stageChanged) save();
     if (!data.settings) data.settings = { ...DEFAULT_SETTINGS };
@@ -121,7 +137,7 @@ function ensureModel() {
         changed = true;
       }
       if (!Array.isArray(copy.documents)) copy.documents = [];
-      if (!copy.stage) { copy.stage = deriveStage(copy.observed); changed = true; }
+      if (!copy.track) { const ts = deriveTrackStage(copy.observed); copy.track = ts.track; copy.stage = ts.stage; changed = true; }
       out.push(copy);
     });
     if (levels.length > 1) changed = true;
@@ -208,7 +224,7 @@ function seed() {
       data.curricula.push({
         id: nextId('curricula'), programme: p.programme, department: p.department, nta: lvl, levels: String(lvl),
         validation: f.validation, valid_until: f.valid_until || '', observed: f.observed || '', notes: f.notes || '',
-        stage: deriveStage(f.observed), campuses, review_started: '', reviewer: '', documents: [],
+        track: deriveTrackStage(f.observed).track, stage: deriveTrackStage(f.observed).stage, campuses, review_started: '', reviewer: '', documents: [],
         updated_by: 'System (imported)', updated_at: '2025-09-01', created_at: now()
       });
     });
@@ -300,10 +316,14 @@ const repo = {
   createCurriculum(c, actor) {
     const id = nextId('curricula');
     const lvl = Array.isArray(c.nta) ? Number(c.nta[0]) : Number(c.nta);
+    let track = TRACKS.includes(c.track) ? c.track : deriveTrackStage(c.observed).track;
+    let stage = c.stage;
+    if (track === 'stable') stage = '';
+    else if (!stagesForTrack(track).includes(stage)) stage = stagesForTrack(track)[0];
     const rec = {
       id, programme: c.programme, department: c.department, nta: NTA_LEVELS.includes(lvl) ? lvl : (parseNtaString(c.levels)[0] || null),
       validation: c.validation || 'Available', valid_until: c.valid_until || '', observed: c.observed || '', notes: c.notes || '',
-      stage: STAGES.includes(c.stage) ? c.stage : deriveStage(c.observed),
+      track, stage,
       campuses: c.campuses ? campusMap(c.campuses) : campusMap({ 'Dar es Salaam': { offered: true, recognition: 'Available', stamped: 'Available', observed: c.observed || 'Currently implemented' } }),
       review_started: '', reviewer: '', documents: [],
       updated_by: actor, updated_at: today(), created_at: now()
@@ -316,8 +336,11 @@ const repo = {
   updateCurriculum(id, fields, actor) {
     const c = this.getCurriculum(id); if (!c) throw new Error('not found');
     if (fields.nta !== undefined) { const lvl = Array.isArray(fields.nta) ? Number(fields.nta[0]) : Number(fields.nta); if (NTA_LEVELS.includes(lvl)) { c.nta = lvl; c.levels = String(lvl); } }
-    ['programme', 'department', 'validation', 'valid_until', 'observed', 'notes', 'stage', 'review_started', 'reviewer']
+    ['programme', 'department', 'validation', 'valid_until', 'observed', 'notes', 'stage', 'track', 'review_started', 'reviewer']
       .forEach(k => { if (fields[k] !== undefined) c[k] = fields[k]; });
+    if (!TRACKS.includes(c.track)) c.track = 'stable';
+    if (c.track === 'stable') c.stage = '';
+    else if (!stagesForTrack(c.track).includes(c.stage)) c.stage = stagesForTrack(c.track)[0];
     if (fields.campuses) {
       CAMPUSES.forEach(cn => {
         if (fields.campuses[cn]) c.campuses[cn] = Object.assign(emptyCampus(), c.campuses[cn], fields.campuses[cn]);
@@ -356,4 +379,4 @@ const repo = {
   listAudit: () => data.audit.slice().sort((a, b) => b.id - a.id).slice(0, 500),
 };
 
-module.exports = { repo, audit, CAMPUSES, STAGES };
+module.exports = { repo, audit, CAMPUSES, STAGES, NEW_STAGES, REVIEW_STAGES, TRACKS };
