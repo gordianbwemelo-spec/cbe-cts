@@ -65,11 +65,21 @@ const LEGACY_TRACK_STAGE = {
   'Ready for implementation – awaiting departmental recognition': ['new', 'Ready for implementation – awaiting departmental recognition'],
   'Validated – awaiting departmental recognition': ['new', 'Ready for implementation – awaiting departmental recognition']
 };
-function deriveTrackStage(observed) {
-  const o = String(observed || '');
-  if (/implemented/i.test(o)) return { track: 'stable', stage: '' };
-  if (/ready for implementation|awaiting/i.test(o)) return { track: 'new', stage: 'Ready for implementation – awaiting departmental recognition' };
-  return { track: 'new', stage: 'Pre-validation' };
+// Classify a curriculum into a track. KEY RULE: a curriculum that has been implemented, or whose
+// validity date has lapsed (i.e. it is expired), is an EXISTING programme — never a "new programme".
+// An existing programme becomes 'review' only when the college starts a review (set on the record).
+// 'new' is reserved for programmes that were NEVER implemented.
+function deriveTrackStage(c) {
+  const observed = typeof c === 'string' ? c : (c && c.observed) || '';
+  const validUntil = (c && typeof c === 'object' && c.valid_until) || '';
+  const o = String(observed);
+  const implemented = /implemented/i.test(o);
+  const awaiting = /ready for implementation|awaiting/i.test(o);
+  let expired = false;
+  if (validUntil) { const d = new Date(validUntil + 'T00:00:00Z'); if (!isNaN(d.getTime()) && d < new Date()) expired = true; }
+  if (implemented || expired) return { track: 'stable', stage: '' };          // existing programme (implemented or expired)
+  if (awaiting) return { track: 'new', stage: 'Ready for implementation – awaiting departmental recognition' }; // validated new programme, awaiting recognition
+  return { track: 'new', stage: 'Pre-validation' };                            // brand-new programme in early development
 }
 // A blank per-campus record = not offered at that campus.
 function emptyCampus() { return { offered: false, recognition: 'Missing', stamped: 'Missing', observed: 'Not offered' }; }
@@ -90,19 +100,19 @@ function load() {
     if (_deptAdded) data.lists.departments.sort((a, b) => a.localeCompare(b));
     // Upgrade records to the {track, stage} model. Derive the track from the OBSERVED status so an
     // implemented curriculum is 'stable' (established) regardless of any stale stage value it carried.
-    // A one-time correction (stageModelV=2) re-derives records that an earlier pass mis-classified.
+    // A one-time correction (stageModelV=3) re-derives records that an earlier pass mis-classified.
     let _stageChanged = false;
-    const _needV2 = data.stageModelV !== 2;
+    const _needV2 = data.stageModelV !== 3;
     (data.curricula || []).forEach(c => {
       if (!c.track || _needV2) {
-        const ts = deriveTrackStage(c.observed);
+        const ts = deriveTrackStage(c);
         c.track = ts.track; c.stage = ts.stage; _stageChanged = true;
       }
       if (!TRACKS.includes(c.track)) { c.track = 'stable'; _stageChanged = true; }
       if (c.track === 'stable' && c.stage) { c.stage = ''; _stageChanged = true; }
       if (c.track !== 'stable' && !stagesForTrack(c.track).includes(c.stage)) { c.stage = stagesForTrack(c.track)[0]; _stageChanged = true; }
     });
-    if (_needV2) { data.stageModelV = 2; _stageChanged = true; }
+    if (_needV2) { data.stageModelV = 3; _stageChanged = true; }
     if (_stageChanged) save();
     if (!data.settings) data.settings = { ...DEFAULT_SETTINGS };
     if (!data.notifications) data.notifications = [];
@@ -141,7 +151,7 @@ function ensureModel() {
         changed = true;
       }
       if (!Array.isArray(copy.documents)) copy.documents = [];
-      if (!copy.track) { const ts = deriveTrackStage(copy.observed); copy.track = ts.track; copy.stage = ts.stage; changed = true; }
+      if (!copy.track) { const ts = deriveTrackStage(copy); copy.track = ts.track; copy.stage = ts.stage; changed = true; }
       out.push(copy);
     });
     if (levels.length > 1) changed = true;
@@ -228,7 +238,7 @@ function seed() {
       data.curricula.push({
         id: nextId('curricula'), programme: p.programme, department: p.department, nta: lvl, levels: String(lvl),
         validation: f.validation, valid_until: f.valid_until || '', observed: f.observed || '', notes: f.notes || '',
-        track: deriveTrackStage(f.observed).track, stage: deriveTrackStage(f.observed).stage, campuses, review_started: '', reviewer: '', documents: [],
+        track: deriveTrackStage(f).track, stage: deriveTrackStage(f).stage, campuses, review_started: '', reviewer: '', documents: [],
         updated_by: 'System (imported)', updated_at: '2025-09-01', created_at: now()
       });
     });
@@ -320,7 +330,7 @@ const repo = {
   createCurriculum(c, actor) {
     const id = nextId('curricula');
     const lvl = Array.isArray(c.nta) ? Number(c.nta[0]) : Number(c.nta);
-    let track = TRACKS.includes(c.track) ? c.track : deriveTrackStage(c.observed).track;
+    let track = TRACKS.includes(c.track) ? c.track : deriveTrackStage(c).track;
     let stage = c.stage;
     if (track === 'stable') stage = '';
     else if (!stagesForTrack(track).includes(stage)) stage = stagesForTrack(track)[0];
