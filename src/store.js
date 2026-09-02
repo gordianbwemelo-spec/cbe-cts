@@ -77,7 +77,8 @@ function deriveTrackStage(c) {
   const awaiting = /ready for implementation|awaiting/i.test(o);
   let expired = false;
   if (validUntil) { const d = new Date(validUntil + 'T00:00:00Z'); if (!isNaN(d.getTime()) && d < new Date()) expired = true; }
-  if (implemented || expired) return { track: 'stable', stage: '' };          // existing programme (implemented or expired)
+  if (expired) return { track: 'review', stage: 'Pre-validation' };            // expired -> its review has begun, at pre-validation
+  if (implemented) return { track: 'stable', stage: '' };                      // valid & implemented -> established, not under review
   if (awaiting) return { track: 'new', stage: 'Ready for implementation – awaiting departmental recognition' }; // validated new programme, awaiting recognition
   return { track: 'new', stage: 'Pre-validation' };                            // brand-new programme in early development
 }
@@ -100,9 +101,9 @@ function load() {
     if (_deptAdded) data.lists.departments.sort((a, b) => a.localeCompare(b));
     // Upgrade records to the {track, stage} model. Derive the track from the OBSERVED status so an
     // implemented curriculum is 'stable' (established) regardless of any stale stage value it carried.
-    // A one-time correction (stageModelV=3) re-derives records that an earlier pass mis-classified.
+    // A one-time correction (stageModelV=4) re-derives records that an earlier pass mis-classified.
     let _stageChanged = false;
-    const _needV2 = data.stageModelV !== 3;
+    const _needV2 = data.stageModelV !== 4;
     (data.curricula || []).forEach(c => {
       if (!c.track || _needV2) {
         const ts = deriveTrackStage(c);
@@ -112,7 +113,7 @@ function load() {
       if (c.track === 'stable' && c.stage) { c.stage = ''; _stageChanged = true; }
       if (c.track !== 'stable' && !stagesForTrack(c.track).includes(c.stage)) { c.stage = stagesForTrack(c.track)[0]; _stageChanged = true; }
     });
-    if (_needV2) { data.stageModelV = 3; _stageChanged = true; }
+    if (_needV2) { data.stageModelV = 4; _stageChanged = true; }
     if (_stageChanged) save();
     if (!data.settings) data.settings = { ...DEFAULT_SETTINGS };
     if (!data.notifications) data.notifications = [];
