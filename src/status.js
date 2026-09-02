@@ -21,10 +21,18 @@ function statusOf(c, refISO, leadMonths) {
   if (m <= leadMonths) return 'Due for review';
   return 'Valid';
 }
-function recommendedAction(status, m, recognitionGap, campus) {
+function recommendedAction(status, m, recognitionGap, campus, c) {
   const parts = [];
-  if (status === 'Expired') parts.push('Review overdue by ~' + Math.abs(Math.round(m)) + ' month(s) — initiate curriculum review immediately.');
-  else if (status === 'Due for review') parts.push('Expires in ~' + Math.round(m) + ' month(s) — begin the review process now.');
+  const rec = c || {};
+  const underReview = rec.track && rec.track !== 'stable' && rec.stage;
+  if (status === 'Expired') {
+    if (underReview) parts.push('Expired ~' + Math.abs(Math.round(m)) + ' month(s) ago; its review is under way — currently at ' + String(rec.stage).toLowerCase() + '.');
+    else parts.push('Review overdue by ~' + Math.abs(Math.round(m)) + ' month(s) — initiate curriculum review immediately.');
+  }
+  else if (status === 'Due for review') {
+    if (underReview) parts.push('Expires in ~' + Math.round(m) + ' month(s); its review is under way — currently at ' + String(rec.stage).toLowerCase() + '.');
+    else parts.push('Expires in ~' + Math.round(m) + ' month(s) — begin the review process now.');
+  }
   else if (status === 'Unverified') parts.push('Implemented without complete valid documents — obtain approval/stamped copy and set a validity date.');
   else if (status === 'Pending approval') parts.push('Awaiting approval documents before implementation.');
   if (recognitionGap) parts.push('Department not yet recognised to offer this programme at ' + campus + ' — obtain departmental recognition.');
@@ -39,7 +47,7 @@ function enrich(c, refISO, leadMonths) {
   const status = statusOf(c, refISO, leadMonths);
   const offered = offeredCampusesOf(c);
   const recGaps = recognitionGapsOf(c);
-  let action = recommendedAction(status, m, false, '');
+  let action = recommendedAction(status, m, false, '', c);
   if (recGaps.length) action = (action === 'No action required.' ? '' : action + ' ') + 'Offered without departmental recognition at: ' + recGaps.join(', ') + '.';
   return Object.assign({}, c, {
     months_left: m, status,
@@ -65,7 +73,7 @@ function projectCampus(c, campus, refISO, leadMonths) {
     months_left: m, status,
     docs: (c.validation === 'Available' && co.recognition === 'Available' && co.stamped === 'Available') ? 'Complete' : 'Incomplete',
     doc_gaps: gaps, recognitionGap,
-    action: recommendedAction(status, m, recognitionGap, campus)
+    action: recommendedAction(status, m, recognitionGap, campus, c)
   });
 }
 
