@@ -214,7 +214,7 @@ async function viewDashboard(m){
   const s=d.summary;
   const totalLabel = state.campus?('Curricula at '+state.campus):'Total curricula';
   const kpis=[['k-total',totalLabel,s.total],['k-valid','Valid',s.Valid],['k-due','Due for review',s['Due for review']],
-    ['k-expired','Expired',s.Expired],['k-gaps','Missing documents',s.gaps],['k-recog','Awaiting recognition',s.recognitionGaps||0]];
+    ['k-expired','Expired',s.Expired],['k-gaps','Missing documents',s.gaps],['k-recog','Awaiting recognition',s.awaitingRecognition||0]];
   const alerts = d.alerts.length ? d.alerts.slice(0,12).map(r=>{
     const cls=r.status==='Expired'?'crit':r.status==='Due for review'?'warn':'ser';
     return `<div class="alert ${cls}"><div style="flex:1"><div class="title">${esc(r.programme)} <span class="pill b" style="font-weight:600">${esc(r.department)}</span></div>
@@ -265,16 +265,26 @@ function execNarrative(d){
   const gapsClause = s.gaps>0
     ? `${b(s.gaps)} ${s.gaps===1?'curriculum is':'curricula are'} missing ${s.gaps===1?'its':'their'} approval or validation ${s.gaps===1?'letter':'letters'}`
     : 'no curricula are missing their approval or validation letters';
-  let recogClause;
-  if(s.recognitionGaps>0){
-    const one=s.recognitionGaps===1;
-    recogClause = campusScope
-      ? `${b(s.recognitionGaps)} ${one?'is':'are'} ready for implementation but ${one?'is':'are'} still awaiting departmental recognition here`
-      : `${b(s.recognitionGaps)} campus offering${one?'':'s'} ${one?'is':'are'} ready for implementation but ${one?'is':'are'} still awaiting departmental recognition`;
+  const aR = s.awaitingRecognition||0, aRP = s.awaitingRecognitionProgrammes||0, rg = s.recognitionGaps||0;
+  let awaitClause;
+  if(aR>0){
+    const one=aR===1;
+    awaitClause = campusScope
+      ? `${b(aR)} new programme${one?'':'s'} here ${one?'is':'are'} ready for implementation and awaiting departmental recognition`
+      : `${b(aR)} ${one?'curriculum':'curricula'} (${b(aRP)} programme${aRP===1?'':'s'}) ${one?'is':'are'} ready for implementation and awaiting departmental recognition`;
   } else {
-    recogClause = campusScope ? 'no programme here is awaiting departmental recognition' : 'no campus offerings are awaiting departmental recognition';
+    awaitClause = campusScope ? 'no new programmes here are awaiting departmental recognition' : 'no new programmes are awaiting departmental recognition';
   }
-  parts.push(`${unvClause}. On documents, ${gapsClause}; on recognition, ${recogClause}.`);
+  let campusRecogClause;
+  if(rg>0){
+    const one=rg===1;
+    campusRecogClause = campusScope
+      ? `a separate ${b(rg)} offering${one?'':'s'} here ${one?'is':'are'} recorded as offered without a departmental recognition on file`
+      : `separately, ${b(rg)} campus offering${one?'':'s'} across the College ${one?'is':'are'} recorded as offered without a departmental recognition on file`;
+  } else {
+    campusRecogClause = campusScope ? 'and no other offering here lacks a recorded departmental recognition' : 'and no other campus offerings lack a recorded departmental recognition';
+  }
+  parts.push(`${unvClause}. On documents, ${gapsClause}. On recognition, ${awaitClause}; ${campusRecogClause}.`);
 
   // Expired: report the current initiative rather than blanketing everything as "review immediately".
   if(notStarted.length){
@@ -327,7 +337,8 @@ async function viewExec(m){
   if(expiredNotStarted.length) priorities.push(`Initiate a curriculum review immediately for the <b>${expiredNotStarted.length}</b> expired ${expiredNotStarted.length===1?'curriculum':'curricula'} with no review under way.`);
   if(expiredInReview.length) priorities.push(`Progress to completion the <b>${expiredInReview.length}</b> expired ${expiredInReview.length===1?'curriculum':'curricula'} already under review, so they are re-validated without further delay.`);
   if(s['Due for review']) priorities.push(`Begin the review process for <b>${s['Due for review']}</b> curricula entering the ${d.lead}-month review window.`);
-  if(s.recognitionGaps) priorities.push(`Grant departmental recognition to the <b>${s.recognitionGaps}</b> campus offering${s.recognitionGaps===1?'':'s'} that ${s.recognitionGaps===1?'is':'are'} ready for implementation but awaiting it.`);
+  if(s.awaitingRecognition) priorities.push(`Secure departmental recognition for the <b>${s.awaitingRecognition}</b> new ${s.awaitingRecognition===1?'programme curriculum':'programme curricula'} (<b>${s.awaitingRecognitionProgrammes}</b> programme${s.awaitingRecognitionProgrammes===1?'':'s'}) that ${s.awaitingRecognition===1?'is':'are'} ready for implementation and awaiting only that recognition.`);
+  if(s.recognitionGaps) priorities.push(`Record or obtain departmental recognition for the <b>${s.recognitionGaps}</b> campus offering${s.recognitionGaps===1?'':'s'} that ${s.recognitionGaps===1?'is':'are'} currently offered without a recognition on file.`);
   if(s.gaps) priorities.push(`Obtain the missing documents (approval letters / departmental recognition / stamped copies) for <b>${s.gaps}</b> curricula.`);
   if(s['Pending approval']) priorities.push(`Finalise approvals for <b>${s['Pending approval']}</b> curricula that are ready for implementation.`);
   priorities.push(`Ensure every curriculum's review starts at least <b>${d.lead} months</b> before its expiry date.`);
@@ -773,7 +784,7 @@ async function viewReports(m){
       <div class="fld"><label>Report scope</label><select id="rp_scope" onchange="scopeChange()">
         <option value="all">All curricula (full status report)</option><option value="action">Curricula requiring action</option>
         <option value="expired">Expired only</option><option value="due">Due for review only</option>
-        <option value="gaps">Missing approval / validation documents</option><option value="recognition">Awaiting departmental recognition</option><option value="dept">By department</option><option value="stage">By development / validation stage</option></select></div>
+        <option value="gaps">Missing approval / validation documents</option><option value="recognition">Campus offerings without recorded recognition</option><option value="dept">By department</option><option value="stage">By development / validation stage</option></select></div>
       <div class="fld" id="rp_deptwrap" style="display:none"><label>Department</label><select id="rp_dept">${depts.map(d=>`<option>${esc(d)}</option>`).join('')}</select></div>
       <div class="fld" id="rp_stagewrap" style="display:none"><label>Development stage</label><select id="rp_stage">${(state.meta.stages||[]).map(s=>`<option>${esc(s)}</option>`).join('')}</select></div>
       <div class="fld"><label>&nbsp;</label><button class="btn primary small" onclick="buildReport()">Generate report</button></div>
@@ -790,12 +801,12 @@ window.dlCSV=()=>{ const {scope,dept,stage}=scopeParams(); window.open('/api/rep
 window.buildReport=async()=>{
   const {scope,dept,stage}=scopeParams();
   const d=await api('GET','/report'+qref()+'&scope='+encodeURIComponent(scope)+'&dept='+encodeURIComponent(dept)+'&stage='+encodeURIComponent(stage));
-  const s=d.summary; const eb=d.expiredBreakdown||{total:s.Expired||0,inReview:0,notStarted:s.Expired||0}; const nb=(x,w)=>x>0?`<b>${x}</b> ${w}`:`no ${w}`; const labels={all:'Full status report',action:'Curricula requiring action',expired:'Expired curricula',due:'Curricula due for review',gaps:'Missing approval or validation documents',recognition:'Awaiting departmental recognition (offered, not yet recognised)',dept:'Department: '+dept,stage:'Development / validation stage: '+stage};
+  const s=d.summary; const eb=d.expiredBreakdown||{total:s.Expired||0,inReview:0,notStarted:s.Expired||0}; const nb=(x,w)=>x>0?`<b>${x}</b> ${w}`:`no ${w}`; const labels={all:'Full status report',action:'Curricula requiring action',expired:'Expired curricula',due:'Curricula due for review',gaps:'Missing approval or validation documents',recognition:'Campus offerings without a recorded departmental recognition',dept:'Department: '+dept,stage:'Development / validation stage: '+stage};
   const body=d.rows.map(r=>`<tr><td>${esc(r.programme)}</td><td>${esc(r.department)}</td><td class="c">${esc(r.levels)}</td><td>${fmtDate(r.valid_until)}</td><td class="c">${r.months_left==null?'—':Math.round(r.months_left)}</td><td>${esc(r.status)}</td><td>${esc(r.stage?stageLabelShort(r.stage):'—')}</td><td>${esc(r.docs)}</td><td>${esc(state.campus?(r.campusObserved||''):(r.observed||''))}</td></tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:#657685">No records for this scope.</td></tr>';
   document.getElementById('reportOut').innerHTML=`<div class="card"><div class="official"><div class="oh"><img src="/assets/arms.png"><div class="c"><div class="l1">THE UNITED REPUBLIC OF TANZANIA</div><div class="l2">COLLEGE OF BUSINESS EDUCATION</div><div class="l3">Curriculum Development, Review &amp; Implementation — Status Report</div></div><img src="/assets/be.png"></div>
     <div class="ob"><div class="otitle">${esc(labels[scope])}</div>
     <table class="tbl"><tr><th style="width:170px">Generated</th><td>${fmtDate(d.ref)}</td></tr><tr><th>Prepared by</th><td>${esc(state.user.name)} (${ROLE_LABEL[state.user.role]})</td></tr><tr><th>Review lead time</th><td>${d.lead} months before expiry</td></tr></table>
-    <div class="banner" style="margin-top:12px"><b>Executive summary.</b> As at ${fmtDate(d.ref)}, ${state.campus?esc(state.campus)+' campus':'the College'} tracks <b>${s.total}</b> curricula: ${nb(s.Valid,'valid')}, ${nb(s['Due for review'],'due for review (within '+d.lead+' months)')}, ${nb(s.Expired,'expired')}, ${nb(s['Pending approval'],'pending approval')} and ${nb(s.Unverified,'unverified')}.${eb.total>0?` Of the expired, ${eb.notStarted>0?`<b>${eb.notStarted}</b> ${eb.notStarted===1?'has':'have'} no review under way and ${eb.notStarted===1?'needs':'need'} a review started`:'all are already under review'}${eb.notStarted>0&&eb.inReview>0?`, while <b>${eb.inReview}</b> ${eb.inReview===1?'is':'are'} already under review`:(eb.notStarted===0&&eb.inReview>0?` (<b>${eb.inReview}</b>)`:'')}.`:''} ${s.gaps>0?`<b>${s.gaps}</b> ${s.gaps===1?'curriculum is':'curricula are'} missing ${s.gaps===1?'its':'their'} approval or validation ${s.gaps===1?'letter':'letters'}`:'No curricula are missing their approval or validation letters'}.${(s.recognitionGaps||0)>0?` <b>${s.recognitionGaps}</b> campus offering${s.recognitionGaps===1?' is':'s are'} ready for implementation but ${s.recognitionGaps===1?'is':'are'} still awaiting departmental recognition.`:''}</div>
+    <div class="banner" style="margin-top:12px"><b>Executive summary.</b> As at ${fmtDate(d.ref)}, ${state.campus?esc(state.campus)+' campus':'the College'} tracks <b>${s.total}</b> curricula: ${nb(s.Valid,'valid')}, ${nb(s['Due for review'],'due for review (within '+d.lead+' months)')}, ${nb(s.Expired,'expired')}, ${nb(s['Pending approval'],'pending approval')} and ${nb(s.Unverified,'unverified')}.${eb.total>0?` Of the expired, ${eb.notStarted>0?`<b>${eb.notStarted}</b> ${eb.notStarted===1?'has':'have'} no review under way and ${eb.notStarted===1?'needs':'need'} a review started`:'all are already under review'}${eb.notStarted>0&&eb.inReview>0?`, while <b>${eb.inReview}</b> ${eb.inReview===1?'is':'are'} already under review`:(eb.notStarted===0&&eb.inReview>0?` (<b>${eb.inReview}</b>)`:'')}.`:''} ${s.gaps>0?`<b>${s.gaps}</b> ${s.gaps===1?'curriculum is':'curricula are'} missing ${s.gaps===1?'its':'their'} approval or validation ${s.gaps===1?'letter':'letters'}`:'No curricula are missing their approval or validation letters'}.${(s.awaitingRecognition||0)>0?` <b>${s.awaitingRecognition}</b> new ${s.awaitingRecognition===1?'programme curriculum is':'programme curricula ('+(s.awaitingRecognitionProgrammes||0)+' programmes) are'} ready for implementation and awaiting departmental recognition.`:''}${(s.recognitionGaps||0)>0?` Separately, <b>${s.recognitionGaps}</b> campus offering${s.recognitionGaps===1?' is':'s are'} recorded as offered without a departmental recognition on file.`:''}</div>
     <h2 style="margin:14px 0 8px;font-size:18px">Details (${d.rows.length} record${d.rows.length!==1?'s':''})</h2>
     <div style="overflow:auto"><table class="tbl"><thead><tr><th>Programme</th><th>Department</th><th class="c">NTA</th><th>Valid Until</th><th class="c">Months</th><th>Status</th><th>Dev. stage</th><th>Docs</th><th>Implementation</th></tr></thead><tbody>${body}</tbody></table></div>
     <div class="note">Generated by the CBE Curriculum Tracking System. Source data: Curriculum Availability, Implementation and Validity Verification (Sept 2025).</div>
