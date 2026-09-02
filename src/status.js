@@ -95,16 +95,24 @@ function sortByUrgency(a, b) {
 }
 
 // Summaries ---------------------------------------------------------------
+// A curriculum is "ready for implementation, awaiting departmental recognition" only when it is a
+// new programme sitting at that final development stage — NOT any campus whose recognition record
+// is simply blank. The two are counted separately (awaitingRecognition vs recognitionGaps).
+function awaitsRecognition(r) { return r.track === 'new' && /awaiting/i.test(r.stage || ''); }
 function summarise(list, refISO, leadMonths) {
   const rows = list.map(c => enrich(c, refISO, leadMonths));
-  const c = { total: rows.length, Valid: 0, 'Due for review': 0, Expired: 0, 'Pending approval': 0, Unverified: 0, gaps: 0, recognitionGaps: 0, offerings: 0 };
-  rows.forEach(r => { c[r.status]++; if (r.docs === 'Incomplete') c.gaps++; c.recognitionGaps += r.recognitionGapCount; c.offerings += r.offeredCount; });
+  const c = { total: rows.length, Valid: 0, 'Due for review': 0, Expired: 0, 'Pending approval': 0, Unverified: 0, gaps: 0, recognitionGaps: 0, awaitingRecognition: 0, awaitingRecognitionProgrammes: 0, offerings: 0 };
+  const awaitingProgs = new Set();
+  rows.forEach(r => { c[r.status]++; if (r.docs === 'Incomplete') c.gaps++; c.recognitionGaps += r.recognitionGapCount; c.offerings += r.offeredCount; if (awaitsRecognition(r)) { c.awaitingRecognition++; awaitingProgs.add(r.programme); } });
+  c.awaitingRecognitionProgrammes = awaitingProgs.size;
   return c;
 }
 function summariseCampus(list, campus, refISO, leadMonths) {
   const rows = list.map(c => projectCampus(c, campus, refISO, leadMonths)).filter(r => r.offered);
-  const c = { total: rows.length, Valid: 0, 'Due for review': 0, Expired: 0, 'Pending approval': 0, Unverified: 0, gaps: 0, recognitionGaps: 0, offerings: rows.length };
-  rows.forEach(r => { c[r.status]++; if (r.docs === 'Incomplete') c.gaps++; if (r.recognitionGap) c.recognitionGaps++; });
+  const c = { total: rows.length, Valid: 0, 'Due for review': 0, Expired: 0, 'Pending approval': 0, Unverified: 0, gaps: 0, recognitionGaps: 0, awaitingRecognition: 0, awaitingRecognitionProgrammes: 0, offerings: rows.length };
+  const awaitingProgs = new Set();
+  rows.forEach(r => { c[r.status]++; if (r.docs === 'Incomplete') c.gaps++; if (r.recognitionGap) c.recognitionGaps++; if (awaitsRecognition(r)) { c.awaitingRecognition++; awaitingProgs.add(r.programme); } });
+  c.awaitingRecognitionProgrammes = awaitingProgs.size;
   return c;
 }
 
